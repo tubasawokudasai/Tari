@@ -1,2 +1,35 @@
-/.DS_Store
-/tari.log
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Xcode
+*.pbxuser
+!default.pbxuser
+*.mode1v3
+!default.mode1v3
+*.mode2v3
+!default.mode2v3
+*.perspectivev3
+!default.perspectivev3
+xcuserdata
+*.xccheckout
+*.moved-aside
+DerivedData
+*.hmap
+*.ipa
+*.xcuserstate
+project.xcworkspace
+
+# Build logs
+*.log
+build/
+build.log
+
+# Application logs
+tari.log
+
+# Temporary files
+*.tmp
+*.temp
+file_tree.txt
