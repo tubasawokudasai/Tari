@@ -63,6 +63,7 @@ struct PreviewView: View {
     var onClose: () -> Void
     @State private var content: String = "加载中..."
     @State private var item: ClipboardItem?
+    @State private var scale: CGFloat = 1.0
 
     var body: some View {
         VStack(spacing: 0) {
@@ -78,24 +79,36 @@ struct PreviewView: View {
             }
         )
             
-            ScrollView {
-                if let item = item {
-                    switch item.contentType {
-                    case .image:
-                        // 图片预览
-                        if let imageData = item.additionalData, let nsImage = NSImage(data: imageData) {
-                            Image(nsImage: nsImage)
-                                .resizable()
-                                .scaledToFit()
-                                .padding()
-                                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                        } else {
-                            Text("无法加载图片")
-                                .padding()
-                                .frame(maxWidth: .infinity, alignment: .leading)
+            if let item = item {
+                switch item.contentType {
+                case .image:
+                    // 图片预览 - 使用单一ScrollView解决嵌套滑动问题
+                    if let imageData = item.additionalData, let nsImage = NSImage(data: imageData) {
+                        ScrollView([.horizontal, .vertical]) {
+                            VStack {
+                                HStack {
+                                    Image(nsImage: nsImage)
+                                        .resizable()
+                                        .aspectRatio(contentMode: .fit)
+                                        .frame(width: nsImage.size.width * scale, height: nsImage.size.height * scale)
+                                        .padding()
+                                }
+                            }
                         }
-                    case .text, .fileURL, .unknown:
-                        // 文本内容使用TextEditor支持选中
+                        .gesture(MagnificationGesture()
+                            .onChanged { value in
+                                scale = value
+                            }
+                        )
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    } else {
+                        Text("无法加载图片")
+                            .padding()
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                case .text, .fileURL, .unknown:
+                    // 文本内容使用ScrollView和TextEditor支持滚动和选中
+                    ScrollView {
                         TextEditor(text: .constant(content))
                             .font(.system(size: 12, design: .monospaced))
                             .padding()
@@ -103,7 +116,9 @@ struct PreviewView: View {
                             .background(Color.clear)
                             .lineSpacing(4)
                     }
-                } else {
+                }
+            } else {
+                ScrollView {
                     Text("加载中...")
                         .padding()
                         .frame(maxWidth: .infinity, alignment: .leading)
@@ -115,7 +130,7 @@ struct PreviewView: View {
             GlassEffectContainer(spacing: 100) {
                 Color.clear
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .glassEffect(in: RoundedRectangle(cornerRadius: 12))
+                    .glassEffect(in: RoundedRectangle(cornerRadius: 16))
             }
         )
         .task {

@@ -2,10 +2,25 @@ import SwiftUI
 import AppKit
 import UniformTypeIdentifiers
 
+// 窗口委托实现，用于处理点击其他区域关闭预览
+class PreviewWindowDelegate: NSObject, NSWindowDelegate {
+    let onClose: () -> Void
+    
+    init(onClose: @escaping () -> Void) {
+        self.onClose = onClose
+        super.init()
+    }
+    
+    func windowDidResignKey(_ notification: Notification) {
+        onClose()
+    }
+}
+
 struct ContentView: View {
     @State private var searchText = ""
     @State private var selectedId: UUID?
     @State private var previewWindow: NSWindow?
+    @State private var previewWindowDelegate: PreviewWindowDelegate?
     @FocusState private var isSearchFocused: Bool
     @ObservedObject var clipboard: ClipboardManager
     
@@ -159,20 +174,40 @@ struct ContentView: View {
         hidePreviewWindow()
         let window = NSPanel(
             contentRect: NSRect(x: 0, y: 0, width: 400, height: 300),
-            styleMask: [.nonactivatingPanel, .fullSizeContentView],
+            styleMask: [.nonactivatingPanel, .fullSizeContentView, .resizable],
             backing: .buffered, defer: false
         )
         window.level = .statusBar
         window.backgroundColor = .clear
         window.contentView = NSHostingView(rootView: PreviewView(itemId: itemId, manager: clipboard) { self.hidePreviewWindow() })
+        
+        // 隐藏标题栏按钮（红绿灯）
+        window.titleVisibility = .hidden
+        window.titlebarAppearsTransparent = true
+        
+        // 添加圆角
+        window.contentView?.wantsLayer = true
+        window.contentView?.layer?.cornerRadius = 16
+        window.contentView?.layer?.masksToBounds = true
+        
+        // 允许通过窗口背景拖动
+        window.isMovableByWindowBackground = true
+        
         window.center()
         window.makeKeyAndOrderFront(nil)
+        
+        // 点击其他区域关闭预览
+        previewWindowDelegate = PreviewWindowDelegate(onClose: { self.hidePreviewWindow() })
+        window.delegate = previewWindowDelegate
+        
         self.previewWindow = window
     }
 
     private func hidePreviewWindow() {
+        previewWindow?.delegate = nil
         previewWindow?.orderOut(nil)
         previewWindow = nil
+        previewWindowDelegate = nil
     }
 }
 
