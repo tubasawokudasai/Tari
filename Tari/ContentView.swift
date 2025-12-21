@@ -194,7 +194,7 @@ struct ContentView: View {
         window.isMovableByWindowBackground = true
         
         window.center()
-        window.makeKeyAndOrderFront(nil)
+        window.orderFront(nil)
         
         // 点击其他区域关闭预览
         previewWindowDelegate = PreviewWindowDelegate(onClose: { self.hidePreviewWindow() })
