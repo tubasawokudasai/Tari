@@ -33,6 +33,9 @@ struct ContentView: View {
     
     private let closePreviewNotification = NotificationCenter.default.publisher(for: Notification.Name("ClosePreviewWindow"))
     
+    // 添加窗口焦点监听
+    private let windowDidBecomeKey = NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)
+    
     var displayItems: [ClipboardItem] {
         if searchText.isEmpty {
             return clipboard.items
@@ -67,44 +70,70 @@ struct ContentView: View {
             .padding(.bottom, 5)
             .zIndex(10)
             
-            ScrollView(.horizontal, showsIndicators: false) {
-                LazyHStack(spacing: 12) {
-                    // 修改点：直接遍历 items 而不是 indices，避免数组变动时的越界崩溃
-                    // 注意：这里我们假设 item.id 是唯一的
-                    ForEach(displayItems, id: \.id) { item in
-                        DraggableItemCard(
-                            item: item,
-                            isSelected: selectedId == item.id,
-                            onTapSelect: { selectedId = item.id },
-                            onTapDouble: {
-                                selectedId = item.id
-                                copyAndPaste(item: item)
-                            },
-                            onDragStart: { 
-                                // 只有当 App 是激活状态且确实在拖拽时才记录日志
-                                if NSApp.isActive {
-                                    DispatchQueue.main.async {
-                                        self.draggedItem = item
-                                    }
-                                }
-                            },
-                            draggedItem: $draggedItem,
-                            clipboard: clipboard
-                        )
+            // 修改：包裹 ScrollViewReader
+            ScrollViewReader { proxy in
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 12) {
+                        // === 修改点 1：调整锚点宽度 === 
+                        // 目标边距 20 - spacing 12 = 8 
+                        // 这样当 scroll 到这个锚点时，屏幕左边会正好留出 8(锚点) + 12(间距) = 20 的空白 
+                        Color.clear
+                            .frame(width: 8, height: 1)
+                            .id("SCROLL_TO_TOP_ANCHOR")
+                        
+                        // 修改点：直接遍历 items 而不是 indices，避免数组变动时的越界崩溃
+                        // 注意：这里我们假设 item.id 是唯一的
+                        ForEach(displayItems, id: \.id) { item in
+                            DraggableItemCard(
+                                item: item,
+                                isSelected: selectedId == item.id,
+                                onTapSelect: { selectedId = item.id },
+                                onTapDouble: {
+                                    selectedId = item.id
+                                    copyAndPaste(item: item)
+                                },
+                                draggedItem: $draggedItem,
+                                clipboard: clipboard
+                            )
+                            .id(item.id)
+                        }
+                        
+                        if clipboard.hasMoreData {
+                            Color.clear.frame(width: 20).onAppear { clipboard.loadMoreItems() }
+                        }
                     }
-                    
-                    if clipboard.hasMoreData {
-                        Color.clear.frame(width: 20).onAppear { clipboard.loadMoreItems() }
+                    // === 修改点 2：只保留垂直和右侧 padding === 
+                    // 移除 .horizontal, 20，改为 .vertical 和 .trailing 
+                    // 左侧 padding 现在由上面的 Color.clear (8px) + spacing (12px) 代替了 
+                    .padding(.vertical, 10)
+                    .padding(.trailing, 20)
+                }
+                .scrollClipDisabled()
+                .onTapGesture {
+                    selectedId = nil
+                    isSearchFocused = false
+                    NSApp.keyWindow?.makeFirstResponder(nil)
+                }
+                
+                // === 核心修复：监听窗口唤醒 ===
+                .onReceive(windowDidBecomeKey) { _ in
+                    // 只有当 Manager 标记需要重置时，才执行滚动
+                    if clipboard.shouldScrollToTop {
+                        // 1. 瞬间滚动到顶部
+                        proxy.scrollTo("SCROLL_TO_TOP_ANCHOR", anchor: .leading)
+                        
+                        // 2. 清理搜索状态
+                        if !searchText.isEmpty {
+                            searchText = ""
+                            isSearchFocused = false
+                        }
+                        selectedId = nil
+                        
+                        // 3. 重置标记
+                        clipboard.shouldScrollToTop = false
+                        print("DEBUG: 窗口唤醒，执行 UI 重置")
                     }
                 }
-                .padding(.horizontal, 20)
-                .padding(.vertical, 10) // 增加一点垂直空间给阴影
-            }
-            .scrollClipDisabled()
-            .onTapGesture {
-                selectedId = nil
-                isSearchFocused = false
-                NSApp.keyWindow?.makeFirstResponder(nil)
             }
             
             Spacer(minLength: 5)
@@ -217,7 +246,6 @@ struct DraggableItemCard: View {
     let isSelected: Bool
     let onTapSelect: () -> Void
     let onTapDouble: () -> Void
-    let onDragStart: () -> Void
     @Binding var draggedItem: ClipboardItem?
     @ObservedObject var clipboard: ClipboardManager
     
@@ -226,47 +254,36 @@ struct DraggableItemCard: View {
             item: item,
             isSelected: isSelected,
             onTapSelect: onTapSelect,
-            onTapDouble: onTapDouble,
-            onDragStart: {
-                print("DEBUG: 开始拖拽 item: \(item.text.prefix(20))")
-                onDragStart()
-            }
+            onTapDouble: onTapDouble
         )
-        // 拖放目标用于内部排序
+        // ✅ 核心修复：onDrag 和 dropDestination 必须在同一个 View 层级上
+        .onDrag {
+            // 1. 立即锁定拖拽对象
+            if NSApp.isActive {
+                self.draggedItem = item
+            }
+            // 2. 调用模型的方法生成数据
+            return item.createItemProvider()
+        }
         .dropDestination(for: ClipboardItem.self) { items, _ in
-            // 只有当拖拽的是内部定义的 ClipboardItem 时才处理排序
-            // 这里的 items 是通过 Transferable 协议解码出来的
-            handleDropCompletion()
+            self.draggedItem = nil
             return true
         } isTargeted: { isTargeted in
             handleDropTargetChange(isTargeted: isTargeted)
         }
     }
     
-    // 将复杂逻辑提取到单独的函数中，帮助编译器进行类型检查
-    private func handleDropCompletion() {
-        print("DEBUG: 拖拽放置完成")
-        self.draggedItem = nil
-    }
-    
     private func handleDropTargetChange(isTargeted: Bool) {
         guard isTargeted, let dragged = draggedItem, dragged.id != item.id else { return }
         
-        // 提取索引查找逻辑
-        guard let sourceIndex = findSourceIndex(dragged: dragged),
-              let targetIndex = findTargetIndex() else { return }
-        
-        print("DEBUG: 排序触发: \(sourceIndex) -> \(targetIndex)")
-        withAnimation(.spring()) {
-            clipboard.moveItem(from: sourceIndex, to: targetIndex)
+        if let sourceIndex = clipboard.items.firstIndex(where: { $0.id == dragged.id }),
+           let targetIndex = clipboard.items.firstIndex(where: { $0.id == item.id }) {
+            
+            if sourceIndex != targetIndex {
+                withAnimation(.spring()) {
+                    clipboard.moveItem(from: sourceIndex, to: targetIndex)
+                }
+            }
         }
-    }
-    
-    private func findSourceIndex(dragged: ClipboardItem) -> Int? {
-        return clipboard.items.firstIndex(where: { $0.id == dragged.id })
-    }
-    
-    private func findTargetIndex() -> Int? {
-        return clipboard.items.firstIndex(where: { $0.id == item.id })
     }
 }

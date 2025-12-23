@@ -4,6 +4,7 @@
         <attribute name="id" optional="YES" attributeType="UUID" usesScalarValueType="NO"/>
         <attribute name="text" optional="YES" attributeType="String"/>
         <attribute name="timestamp" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
+        <attribute name="creationTime" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
         <attribute name="contentType" optional="YES" attributeType="String"/>
         <attribute name="additionalData" optional="YES" attributeType="Binary" allowsExternalBinaryDataStorage="YES"/>
     </entity>

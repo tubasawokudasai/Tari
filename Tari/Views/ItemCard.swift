@@ -8,7 +8,9 @@ struct ItemCard: View, Equatable {
     let isSelected: Bool
     let onTapSelect: () -> Void
     let onTapDouble: () -> Void
-    var onDragStart: (() -> Void)? = nil
+    
+    @State private var cachedAttributedString: NSAttributedString?
+    @State private var cachedBackgroundColor: NSColor?
     
     static func == (lhs: ItemCard, rhs: ItemCard) -> Bool {
         return lhs.item.id == rhs.item.id && lhs.isSelected == rhs.isSelected
@@ -44,6 +46,19 @@ struct ItemCard: View, Equatable {
             return item.text
         }
     }
+    
+    // 🔥 计算属性：智能文字颜色
+    // 根据背景色决定文字颜色：深色背景->白字，浅色背景->黑字
+    private var dynamicTextColor: Color {
+        if let bgColor = cachedBackgroundColor {
+            return bgColor.isDarkColor ? .white : .black.opacity(0.8)
+        }
+        // 🔴 关键修复：当 cachedBackgroundColor 为 nil 时（加载中或纯文本默认），
+        // 因为我们在下面的 background modifier 里 fallback 到了 .white，
+        // 所以这里的文字必须强制为 .black，绝对不能用 .primary！
+        // 否则：深色模式下 -> 背景白(fallback) + 文字白(primary) = 看不见
+        return .black.opacity(0.8)
+    }
 
     // 分解复杂的body为多个计算属性，帮助编译器进行类型检查
     private var headerView: some View {
@@ -51,7 +66,7 @@ struct ItemCard: View, Equatable {
             VStack(alignment: .leading, spacing: 2) {
                 Text(contentTypeTitle)
                     .font(.system(size: 11, weight: .bold))
-                Text(Formatters.timeFormatter.string(from: item.timestamp))
+                Text(Formatters.timeFormatter.string(from: item.creationTime))
                     .font(.system(size: 9))
                     .opacity(0.8)
             }
@@ -84,7 +99,12 @@ struct ItemCard: View, Equatable {
         }
         .padding(10)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.white)
+        // 🎨 背景色逻辑：
+        // 1. 如果有解析出的背景色（RTF），用它
+        // 2. 如果是纯文本，默认用白色 (或者根据需求改成 Color(NSColor.textBackgroundColor))
+        .background(
+            Color(nsColor: cachedBackgroundColor ?? .white)
+        )
     }
     
     private var contentDisplayView: some View {
@@ -117,11 +137,24 @@ struct ItemCard: View, Equatable {
     }
     
     private var textContentView: some View {
-        Text(contentText.prefix(300))
-            .lineLimit(8)
-            .font(.system(size: 12))
-            .foregroundColor(.black.opacity(0.8))
-            .multilineTextAlignment(.leading)
+        Group {
+            if let attrString = cachedAttributedString {
+                RichTextView(
+                    attributedString: attrString,
+                    isEditable: false,
+                    backgroundColor: cachedBackgroundColor
+                )
+                .allowsHitTesting(false) // 禁用交互，点击穿透到卡片
+            } else {
+                // 📝 纯文本模式 (无格式文本)：
+                // 这里必须使用 dynamicTextColor，不能写死 .black
+                Text(contentText.prefix(300))
+                    .lineLimit(8)
+                    .font(.system(size: 12))
+                    .foregroundColor(dynamicTextColor) // ✅ 修复点：动态颜色
+                    .multilineTextAlignment(.leading)
+            }
+        }
     }
     
     private var contentFooterText: some View {
@@ -145,45 +178,24 @@ struct ItemCard: View, Equatable {
         .clipShape(RoundedRectangle(cornerRadius: 12))
         .overlay(footerOverlay)
         .shadow(color: Color.black.opacity(0.1), radius: 4, x: 0, y: 2)
-        .drawingGroup()
         .gesture(TapGesture(count: 2).onEnded { _ in onTapDouble() })
         .simultaneousGesture(TapGesture(count: 1).onEnded { _ in onTapSelect() })
-        .onDrag {
-            onDragStart?()
-            let provider = NSItemProvider()
-            
-            // 1. 注册基础文本类型 (备忘录最常用)
-            provider.registerDataRepresentation(forTypeIdentifier: UTType.utf8PlainText.identifier, visibility: .all) { completion in
-                completion(item.text.data(using: .utf8), nil)
-                return nil
-            }
-            
-            // 2. 如果是文件，注册文件类型
-            if item.contentType == .fileURL, let url = URL(string: item.text) {
-                provider.registerDataRepresentation(forTypeIdentifier: UTType.fileURL.identifier, visibility: .all) { completion in
-                    completion(url.dataRepresentation, nil)
-                    return nil
-                }
-            }
-            
-            // 3. 如果是图片，注册图片类型
-            if item.contentType == .image, let data = item.additionalData {
-                let type = UTType.png.identifier
-                provider.registerDataRepresentation(forTypeIdentifier: type, visibility: .all) { completion in
-                    completion(data, nil)
-                    return nil
-                }
-            }
-            
-            // 4. 注册内部排序类型
-            if let data = try? JSONEncoder().encode(item) {
-                provider.registerDataRepresentation(forTypeIdentifier: "com.tari.item", visibility: .ownProcess) { completion in
-                    completion(data, nil)
-                    return nil
-                }
-            }
-            
-            return provider
+        .contentShape(Rectangle()) // 确保点击区域完整
+        .task(id: item.id) { await loadRichText() }
+    }
+    
+    private func loadRichText() async {
+        // 1. 如果是纯文本且没有 RTF 数据，我们需要手动设置一个默认背景
+        if item.contentType == .text && item.additionalData == nil {
+            // 设定纯文本的默认背景（例如白色，或者随系统）
+            self.cachedBackgroundColor = .white
+            return
         }
+        
+        guard item.contentType == .text || item.contentType == .unknown,
+              let rtfData = item.additionalData else { return }
+        let result = await RTFHelper.parseAsync(data: rtfData)
+        self.cachedAttributedString = result.0
+        self.cachedBackgroundColor = result.1
     }
 }

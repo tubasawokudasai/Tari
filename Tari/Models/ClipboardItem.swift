@@ -15,14 +15,16 @@ enum ClipboardContentType: String, Codable {
 struct ClipboardItem: Identifiable, Equatable, Transferable, Codable {
     let id: UUID
     let text: String
-    // timestamp 保持为 let 即可，修改时我们在 Manager 中创建新实例
+    // timestamp 用于排序，会被修改
     let timestamp: Date
+    // creationTime 存储真实创建时间，不会被修改
+    let creationTime: Date
     let contentType: ClipboardContentType
     var additionalData: Data?
     
     // 增加 Equatable 实现，帮助 SwiftUI 减少不必要的重绘
     static func == (lhs: ClipboardItem, rhs: ClipboardItem) -> Bool {
-        return lhs.id == rhs.id && lhs.timestamp == rhs.timestamp
+        return lhs.id == rhs.id && lhs.timestamp == rhs.timestamp && lhs.creationTime == rhs.creationTime
     }
     
     // 创建粘贴板写入对象
@@ -69,12 +71,55 @@ struct ClipboardItem: Identifiable, Equatable, Transferable, Codable {
             // 从传输的数据创建 ClipboardItem
             guard let text = String(data: data, encoding: .utf8) else {
                 throw NSError(domain: "Tari", code: 0, userInfo: [NSLocalizedDescriptionKey: "Failed to decode string"])            }
+            let currentDate = Date()
             return ClipboardItem(
                 id: UUID(),
                 text: text,
-                timestamp: Date(),
+                timestamp: currentDate,
+                creationTime: currentDate,
                 contentType: .text
             )
         }
+    }
+}
+
+extension ClipboardItem {
+    // 将原本 ItemCard 里的逻辑移到这里
+    func createItemProvider() -> NSItemProvider {
+        let provider = NSItemProvider()
+        
+        // 1. 纯文本
+        provider.registerDataRepresentation(forTypeIdentifier: UTType.utf8PlainText.identifier, visibility: .all) { completion in
+            completion(self.text.data(using: .utf8), nil)
+            return nil
+        }
+        
+        // 2. 文件
+        if self.contentType == .fileURL, let url = URL(string: self.text) {
+            provider.registerDataRepresentation(forTypeIdentifier: UTType.fileURL.identifier, visibility: .all) { completion in
+                completion(url.dataRepresentation, nil)
+                return nil
+            }
+        }
+        
+        // 3. 图片
+        if self.contentType == .image, let data = self.additionalData {
+            let type = UTType.png.identifier
+            provider.registerDataRepresentation(forTypeIdentifier: type, visibility: .all) { completion in
+                completion(data, nil)
+                return nil
+            }
+        }
+        
+        // 4. 内部排序数据
+        if let data = try? JSONEncoder().encode(self) {
+            // 注意：这里 Identifier 要和你的 dropDestination 对应，通常用 App Bundle ID 前缀
+            provider.registerDataRepresentation(forTypeIdentifier: "com.tari.item", visibility: .ownProcess) { completion in
+                completion(data, nil)
+                return nil
+            }
+        }
+        
+        return provider
     }
 }

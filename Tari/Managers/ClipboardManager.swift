@@ -12,6 +12,9 @@ class ClipboardManager: ObservableObject {
     @Published var pageSize = 20
     @Published var hasMoreData = true
     
+    // 新增：标记是否需要滚动回顶部
+    @Published var shouldScrollToTop = false
+    
     private var timer: AnyCancellable?
     private let pasteboard = NSPasteboard.general
     private var lastChangeCount = NSPasteboard.general.changeCount
@@ -45,21 +48,24 @@ class ClipboardManager: ObservableObject {
             hasMoreData = entities.count >= pageSize
             
             return entities.compactMap { (entity: ClipboardEntity) -> ClipboardItem? in
-                guard let id = entity.id,
-                      let text = entity.text,
-                      let time = entity.timestamp,
-                      let contentTypeString = entity.contentType else { return nil }
-                
-                let contentType = ClipboardContentType(rawValue: contentTypeString) ?? .unknown
-                
-                return ClipboardItem(
-                    id: id, 
-                    text: text, 
-                    timestamp: time,
-                    contentType: contentType,
-                    additionalData: entity.additionalData
-                )
-            }
+            guard let id = entity.id,
+                  let text = entity.text,
+                  let time = entity.timestamp,
+                  let contentTypeString = entity.contentType else { return nil }
+            
+            let contentType = ClipboardContentType(rawValue: contentTypeString) ?? .unknown
+            // 使用timestamp作为creationTime，如果有专门的creationTime字段则使用它
+            let creationTime = entity.creationTime ?? time
+            
+            return ClipboardItem(
+                id: id, 
+                text: text, 
+                timestamp: time,
+                creationTime: creationTime,
+                contentType: contentType,
+                additionalData: entity.additionalData
+            )
+        }
         } catch {
             print("Fetch failed: \(error)")
             hasMoreData = false
@@ -76,7 +82,13 @@ class ClipboardManager: ObservableObject {
             if self.currentPage == 0 {
                 self.items = newItems
             } else {
-                self.items.append(contentsOf: newItems)
+                // === 核心修复：去重逻辑 ===
+                // 获取当前已有的所有 ID
+                let existingIDs = Set(self.items.map { $0.id })
+                // 过滤掉新请求中已经存在的 ID
+                let uniqueNewItems = newItems.filter { !existingIDs.contains($0.id) }
+                
+                self.items.append(contentsOf: uniqueNewItems)
             }
             self.currentPage += 1
         }
@@ -93,8 +105,8 @@ class ClipboardManager: ObservableObject {
     
     private func saveNewItem(text: String, contentType: ClipboardContentType, additionalData: Data? = nil) {
         let newId = UUID()
-        let timestamp = Date()
-        let newItem = ClipboardItem(id: newId, text: text, timestamp: timestamp, contentType: contentType, additionalData: additionalData)
+        let currentDate = Date()
+        let newItem = ClipboardItem(id: newId, text: text, timestamp: currentDate, creationTime: currentDate, contentType: contentType, additionalData: additionalData)
         
         DispatchQueue.main.async {
             self.items.insert(newItem, at: 0)
@@ -105,7 +117,8 @@ class ClipboardManager: ObservableObject {
             let newEntity = ClipboardEntity(context: self.context)
             newEntity.id = newId
             newEntity.text = text
-            newEntity.timestamp = timestamp
+            newEntity.timestamp = currentDate
+            newEntity.creationTime = currentDate
             newEntity.contentType = contentType.rawValue
             newEntity.additionalData = additionalData
             
@@ -140,6 +153,31 @@ class ClipboardManager: ObservableObject {
             let deleteRequest = NSBatchDeleteRequest(fetchRequest: request)
             try? self.context.execute(deleteRequest)
             try? self.context.save()
+        }
+    }
+    
+    // MARK: - 状态重置
+    
+    /// 将数据裁剪回第一页，释放内存，重置分页索引
+    func pruneToFirstPage() {
+        if items.count > pageSize {
+            items = Array(items.prefix(pageSize))
+            currentPage = 1
+            hasMoreData = true
+            
+            // === 核心修复：标记需要滚动 ===
+            // 这里不发送通知，而是设置标记，等 View 可见时自己处理
+            DispatchQueue.main.async {
+                self.shouldScrollToTop = true
+            }
+            print("DEBUG: 内存已释放，保留前 \(items.count) 个条目，标记下次唤醒需回滚顶部")
+        } else {
+            // 即使没有释放内存（数据很少），如果是延迟重置触发的，也应该回滚
+            // 为了体验一致性，这里也设置标记
+            DispatchQueue.main.async {
+                self.shouldScrollToTop = true
+            }
+            print("DEBUG: 数据量不大无需释放内存，但标记下次唤醒需回滚顶部")
         }
     }
     
@@ -182,6 +220,7 @@ class ClipboardManager: ObservableObject {
                                 id: mutableItem.id,
                                 text: mutableItem.text,
                                 timestamp: newTimestamp,
+                                creationTime: mutableItem.creationTime,
                                 contentType: mutableItem.contentType,
                                 additionalData: mutableItem.additionalData
                             )
@@ -216,6 +255,7 @@ class ClipboardManager: ObservableObject {
             id: item.id,
             text: item.text,
             timestamp: newTimestamp,
+            creationTime: item.creationTime,
             contentType: item.contentType,
             additionalData: item.additionalData
         )
