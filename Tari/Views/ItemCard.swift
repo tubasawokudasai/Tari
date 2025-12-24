@@ -66,7 +66,7 @@ struct ItemCard: View, Equatable {
             VStack(alignment: .leading, spacing: 2) {
                 Text(contentTypeTitle)
                     .font(.system(size: 11, weight: .bold))
-                Text(Formatters.timeFormatter.string(from: item.creationTime))
+                Text(Formatters.formatRelativeTime(item.creationTime))
                     .font(.system(size: 9))
                     .opacity(0.8)
             }

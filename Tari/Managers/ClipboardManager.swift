@@ -11,6 +11,7 @@ class ClipboardManager: ObservableObject {
     @Published var currentPage = 0
     @Published var pageSize = 20
     @Published var hasMoreData = true
+    @Published var isLoading = false
     
     // 新增：标记是否需要滚动回顶部
     @Published var shouldScrollToTop = false
@@ -74,23 +75,29 @@ class ClipboardManager: ObservableObject {
     }
     
     func loadMoreItems() {
-        guard hasMoreData else { return }
+        // ✅ 检查锁
+        guard hasMoreData, !isLoading else { return }
+        isLoading = true  
         
-        let newItems = fetchItems(page: currentPage)
+        let pageToLoad = currentPage
+        let newItems = fetchItems(page: pageToLoad)
         
-        DispatchQueue.main.async {
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self else { return }
+            
             if self.currentPage == 0 {
                 self.items = newItems
             } else {
-                // === 核心修复：去重逻辑 ===
-                // 获取当前已有的所有 ID
                 let existingIDs = Set(self.items.map { $0.id })
-                // 过滤掉新请求中已经存在的 ID
                 let uniqueNewItems = newItems.filter { !existingIDs.contains($0.id) }
-                
                 self.items.append(contentsOf: uniqueNewItems)
             }
-            self.currentPage += 1
+            
+            if !newItems.isEmpty {
+                self.currentPage += 1
+            }
+            
+            self.isLoading = false // ✅ 解锁
         }
     }
     

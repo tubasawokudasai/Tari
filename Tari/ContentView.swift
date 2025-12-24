@@ -31,6 +31,9 @@ struct ContentView: View {
     // 拖拽排序相关状态
     @State private var draggedItem: ClipboardItem?
     
+    // ✅ 新增：用于存储 ScrollView 的可见宽度，用来计算触发时机
+    @State private var scrollViewWidth: CGFloat = 0
+    
     private let closePreviewNotification = NotificationCenter.default.publisher(for: Notification.Name("ClosePreviewWindow"))
     
     // 添加窗口焦点监听
@@ -72,7 +75,9 @@ struct ContentView: View {
             
             // 修改：包裹 ScrollViewReader
             ScrollViewReader { proxy in
+                // ✅ 1. 定义坐标空间名称
                 ScrollView(.horizontal, showsIndicators: false) {
+                    // ✅ 2. 换回 HStack 以支持拖拽排序
                     HStack(spacing: 12) {
                         // === 修改点 1：调整锚点宽度 === 
                         // 目标边距 20 - spacing 12 = 8 
@@ -98,8 +103,14 @@ struct ContentView: View {
                             .id(item.id)
                         }
                         
+                        // ✅ 3. 自定义触发器 (LoadMoreTrigger)
                         if clipboard.hasMoreData {
-                            Color.clear.frame(width: 20).onAppear { clipboard.loadMoreItems() }
+                            LoadMoreTrigger(
+                                isLoading: clipboard.isLoading,
+                                parentWidth: scrollViewWidth
+                            ) {
+                                clipboard.loadMoreItems()
+                            }
                         }
                     }
                     // === 修改点 2：只保留垂直和右侧 padding === 
@@ -108,6 +119,19 @@ struct ContentView: View {
                     .padding(.vertical, 10)
                     .padding(.trailing, 20)
                 }
+                .coordinateSpace(name: "SCROLL_SPACE") // ✅ 命名坐标空间
+                // ✅ 获取 ScrollView 自身的宽度
+                .background(
+                    GeometryReader { geo in
+                        Color.clear
+                            .onChange(of: geo.size.width) { newWidth in
+                                scrollViewWidth = newWidth
+                            }
+                            .onAppear {
+                                scrollViewWidth = geo.size.width
+                            }
+                    }
+                )
                 .scrollClipDisabled()
                 .onTapGesture {
                     selectedId = nil
@@ -237,6 +261,37 @@ struct ContentView: View {
         previewWindow?.orderOut(nil)
         previewWindow = nil
         previewWindowDelegate = nil
+    }
+}
+
+// ✅ 4. 提取出来的触发器组件
+// 这个组件的作用是：时刻计算自己在 "SCROLL_SPACE" 中的位置
+struct LoadMoreTrigger: View {
+    let isLoading: Bool
+    let parentWidth: CGFloat
+    let onLoad: () -> Void
+    
+    var body: some View {
+        GeometryReader { geo in
+            Color.clear
+                .onChange(of: geo.frame(in: .named("SCROLL_SPACE")).minX) { minX in
+                    // 核心逻辑：
+                    // 如果触发器的左边缘 (minX) 小于 ScrollView 的宽度 (parentWidth)
+                    // 说明触发器已经滑入屏幕（或者即将滑入），此时加载数据
+                    // 加上 +100 的缓冲距离，让用户还没完全到底时就预加载
+                    if minX < parentWidth + 100 && !isLoading {
+                        onLoad()
+                    }
+                }
+                // 初始化检测（防止一开始数据太少填不满屏幕时不加载）
+                .onAppear {
+                    let minX = geo.frame(in: .named("SCROLL_SPACE")).minX
+                    if minX < parentWidth && !isLoading {
+                        onLoad()
+                    }
+                }
+        }
+        .frame(width: 40, height: 1) // 给它一点宽度以便检测
     }
 }
 
