@@ -92,10 +92,6 @@ struct ItemCard: View, Equatable {
             contentDisplayView
             
             Spacer(minLength: 0)
-            HStack {
-                Spacer()
-                contentFooterText
-            }
         }
         .padding(10)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -155,12 +151,6 @@ struct ItemCard: View, Equatable {
                     .multilineTextAlignment(.leading)
             }
         }
-    }
-    
-    private var contentFooterText: some View {
-        Text(item.contentType == .image ? "图片" : "\(item.text.count) 个字符")
-            .font(.system(size: 9))
-            .foregroundColor(.secondary)
     }
     
     private var footerOverlay: some View {

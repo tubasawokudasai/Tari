@@ -2,25 +2,11 @@ import SwiftUI
 import AppKit
 import UniformTypeIdentifiers
 
-// 窗口委托实现，用于处理点击其他区域关闭预览
-class PreviewWindowDelegate: NSObject, NSWindowDelegate {
-    let onClose: () -> Void
-    
-    init(onClose: @escaping () -> Void) {
-        self.onClose = onClose
-        super.init()
-    }
-    
-    func windowDidResignKey(_ notification: Notification) {
-        onClose()
-    }
-}
+
 
 struct ContentView: View {
     @State private var searchText = ""
     @State private var selectedId: UUID?
-    @State private var previewWindow: NSWindow?
-    @State private var previewWindowDelegate: PreviewWindowDelegate?
     @FocusState private var isSearchFocused: Bool
     @ObservedObject var clipboard: ClipboardManager
     
@@ -33,8 +19,6 @@ struct ContentView: View {
     
     // ✅ 新增：用于存储 ScrollView 的可见宽度，用来计算触发时机
     @State private var scrollViewWidth: CGFloat = 0
-    
-    private let closePreviewNotification = NotificationCenter.default.publisher(for: Notification.Name("ClosePreviewWindow"))
     
     // 添加窗口焦点监听
     private let windowDidBecomeKey = NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)
@@ -49,8 +33,8 @@ struct ContentView: View {
         }
     }
     
-
-
+    
+    
     var body: some View {
         VStack(spacing: 0) {
             // 搜索栏
@@ -79,9 +63,9 @@ struct ContentView: View {
                 ScrollView(.horizontal, showsIndicators: false) {
                     // ✅ 2. 换回 HStack 以支持拖拽排序
                     HStack(spacing: 12) {
-                        // === 修改点 1：调整锚点宽度 === 
-                        // 目标边距 20 - spacing 12 = 8 
-                        // 这样当 scroll 到这个锚点时，屏幕左边会正好留出 8(锚点) + 12(间距) = 20 的空白 
+                        // === 修改点 1：调整锚点宽度 ===
+                        // 目标边距 20 - spacing 12 = 8
+                        // 这样当 scroll 到这个锚点时，屏幕左边会正好留出 8(锚点) + 12(间距) = 20 的空白
                         Color.clear
                             .frame(width: 8, height: 1)
                             .id("SCROLL_TO_TOP_ANCHOR")
@@ -108,14 +92,12 @@ struct ContentView: View {
                             LoadMoreTrigger(
                                 isLoading: clipboard.isLoading,
                                 parentWidth: scrollViewWidth
-                            ) {
-                                clipboard.loadMoreItems()
-                            }
+                            ) { clipboard.loadMoreItems() }
                         }
                     }
-                    // === 修改点 2：只保留垂直和右侧 padding === 
-                    // 移除 .horizontal, 20，改为 .vertical 和 .trailing 
-                    // 左侧 padding 现在由上面的 Color.clear (8px) + spacing (12px) 代替了 
+                    // === 修改点 2：只保留垂直和右侧 padding ===
+                    // 移除 .horizontal, 20，改为 .vertical 和 .trailing
+                    // 左侧 padding 现在由上面的 Color.clear (8px) + spacing (12px) 代替了
                     .padding(.vertical, 10)
                     .padding(.trailing, 20)
                 }
@@ -124,17 +106,14 @@ struct ContentView: View {
                 .background(
                     GeometryReader { geo in
                         Color.clear
-                            .onChange(of: geo.size.width) { newWidth in
-                                scrollViewWidth = newWidth
-                            }
-                            .onAppear {
-                                scrollViewWidth = geo.size.width
-                            }
+                            .onChange(of: geo.size.width) { newWidth in scrollViewWidth = newWidth }
+                            .onAppear { scrollViewWidth = geo.size.width }
                     }
                 )
                 .scrollClipDisabled()
                 .onTapGesture {
                     selectedId = nil
+                    PreviewWindowManager.shared.hidePreview()
                     isSearchFocused = false
                     NSApp.keyWindow?.makeFirstResponder(nil)
                 }
@@ -149,13 +128,18 @@ struct ContentView: View {
                         // 2. 清理搜索状态
                         if !searchText.isEmpty {
                             searchText = ""
-                            isSearchFocused = false
                         }
+                        // ✅ 唤醒后直接设置搜索焦点，方便用户直接搜索
+                        isSearchFocused = true
                         selectedId = nil
+                        PreviewWindowManager.shared.hidePreview()
                         
                         // 3. 重置标记
                         clipboard.shouldScrollToTop = false
                         print("DEBUG: 窗口唤醒，执行 UI 重置")
+                    } else {
+                        // ✅ 窗口只是获得焦点，但不需要滚动时，也设置搜索焦点
+                        isSearchFocused = true
                     }
                 }
             }
@@ -171,14 +155,20 @@ struct ContentView: View {
             if newId != nil {
                 isSearchFocused = false
                 NSApp.keyWindow?.makeFirstResponder(nil)
-                if previewWindow != nil, let id = newId { showPreviewWindow(for: id) }
+                // 如果当前有预览窗口打开，更新预览内容
+                if let currentPreviewId = PreviewWindowManager.shared.currentPreviewId, currentPreviewId != newId {
+                    if let selectedItem = displayItems.first(where: { $0.id == newId }) {
+                        PreviewWindowManager.shared.showPreview(item: selectedItem, relativeTo: NSApp.keyWindow)
+                    }
+                }
+            } else {
+                PreviewWindowManager.shared.hidePreview()
             }
         }
-        .onChange(of: isSearchFocused) { if $0 { selectedId = nil } }
+        .onChange(of: isSearchFocused) { if $0 { selectedId = nil; PreviewWindowManager.shared.hidePreview() } }
         .background(KeyEventView { event in
             handleKeyEvent(event)
         })
-        .onReceive(closePreviewNotification) { _ in hidePreviewWindow() }
     }
     
     private func handleKeyEvent(_ event: NSEvent) -> NSEvent? {
@@ -187,14 +177,15 @@ struct ContentView: View {
             if !isSearchFocused, let id = selectedId {
                 clipboard.deleteItem(id: id)
                 selectedId = clipboard.items.first?.id
+                PreviewWindowManager.shared.hidePreview()
                 return nil
             }
         case 8 where event.modifierFlags.contains(.command): // Cmd+C
             copySelectedItem()
             return nil
         case 49: // Space
-            if let id = selectedId {
-                previewWindow != nil ? hidePreviewWindow() : showPreviewWindow(for: id)
+            if let id = selectedId, let selectedItem = displayItems.first(where: { $0.id == id }) {
+                PreviewWindowManager.shared.togglePreview(item: selectedItem, mainWindow: NSApp.keyWindow)
             }
             return nil
         default: break
@@ -208,59 +199,50 @@ struct ContentView: View {
         clipboard.moveItemToTop(id: id)
         hideMainPanels()
     }
-
+    
     func copyAndPaste(item: ClipboardItem) {
+        // 1. 先写入剪贴板 (极快)
         clipboard.copyItemToClipboard(item: item)
-        clipboard.moveItemToTop(id: item.id)
+        
+        // 2. 立即隐藏窗口 (让用户感觉响应最快)
         NSApp.hide(nil)
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
-            let script = NSAppleScript(source: "tell application \"System Events\" to keystroke \"v\" using command down")
-            script?.executeAndReturnError(nil)
+        
+        // 3. 将数据操作放到下一个 RunLoop 或后台，避免阻塞当前隐藏动画
+        // 这一步只是更新 UI 排序，晚几百毫秒用户无感
+        DispatchQueue.main.async {
+            clipboard.moveItemToTop(id: item.id)
+        }
+        
+        // 4. 执行粘贴
+        // 这里的延时是为了等待“上一个应用”重新获得焦点
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+            simulateCmdV()
         }
     }
-
+    
+    // MARK: - 核心优化：使用 CGEvent 模拟按键
+    private func simulateCmdV() {
+        // 定义虚拟键码：V 键是 0x09
+        let kVK_ANSI_V: CGKeyCode = 0x09
+        
+        // 创建按下事件 (Command + V)
+        let source = CGEventSource(stateID: .hidSystemState)
+        guard let eventDown = CGEvent(keyboardEventSource: source, virtualKey: kVK_ANSI_V, keyDown: true),
+              let eventUp = CGEvent(keyboardEventSource: source, virtualKey: kVK_ANSI_V, keyDown: false) else {
+            return
+        }
+        
+        // 设置修饰键 (Command)
+        eventDown.flags = .maskCommand
+        eventUp.flags = .maskCommand // 抬起时也要保持 Command 状态
+        
+        // 发送事件到系统
+        eventDown.post(tap: .cghidEventTap)
+        eventUp.post(tap: .cghidEventTap)
+    }
+    
     private func hideMainPanels() {
         NSApplication.shared.windows.forEach { if $0 is NSPanel { $0.orderOut(nil) } }
-    }
-
-    private func showPreviewWindow(for itemId: UUID) {
-        hidePreviewWindow()
-        let window = NSPanel(
-            contentRect: NSRect(x: 0, y: 0, width: 400, height: 300),
-            styleMask: [.nonactivatingPanel, .fullSizeContentView, .resizable],
-            backing: .buffered, defer: false
-        )
-        window.level = .statusBar
-        window.backgroundColor = .clear
-        window.contentView = NSHostingView(rootView: PreviewView(itemId: itemId, manager: clipboard) { self.hidePreviewWindow() })
-        
-        // 隐藏标题栏按钮（红绿灯）
-        window.titleVisibility = .hidden
-        window.titlebarAppearsTransparent = true
-        
-        // 添加圆角
-        window.contentView?.wantsLayer = true
-        window.contentView?.layer?.cornerRadius = 16
-        window.contentView?.layer?.masksToBounds = true
-        
-        // 允许通过窗口背景拖动
-        window.isMovableByWindowBackground = true
-        
-        window.center()
-        window.orderFront(nil)
-        
-        // 点击其他区域关闭预览
-        previewWindowDelegate = PreviewWindowDelegate(onClose: { self.hidePreviewWindow() })
-        window.delegate = previewWindowDelegate
-        
-        self.previewWindow = window
-    }
-
-    private func hidePreviewWindow() {
-        previewWindow?.delegate = nil
-        previewWindow?.orderOut(nil)
-        previewWindow = nil
-        previewWindowDelegate = nil
     }
 }
 
@@ -283,7 +265,7 @@ struct LoadMoreTrigger: View {
                         onLoad()
                     }
                 }
-                // 初始化检测（防止一开始数据太少填不满屏幕时不加载）
+            // 初始化检测（防止一开始数据太少填不满屏幕时不加载）
                 .onAppear {
                     let minX = geo.frame(in: .named("SCROLL_SPACE")).minX
                     if minX < parentWidth && !isLoading {

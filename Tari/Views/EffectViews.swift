@@ -131,7 +131,6 @@ struct RichTextView: NSViewRepresentable {
     }
 }
 
-// MARK: - RTF Helper for rich text parsing
 struct RTFHelper {
     static func parseAsync(data: Data) async -> (NSAttributedString?, NSColor?) {
         return await Task.detached(priority: .userInitiated) {
@@ -143,21 +142,78 @@ struct RTFHelper {
             ) else {
                 return (nil, nil)
             }
-            var detectedBgColor: NSColor?
-            // 1. 优先使用文档自带背景
-            if let docBg = docAttributes?[NSAttributedString.DocumentAttributeKey.backgroundColor] as? NSColor {
-                detectedBgColor = docBg
+            
+            let mutableAttrString = NSMutableAttributedString(attributedString: attrString)
+            let length = mutableAttrString.length
+            
+            // 1. 获取 RTF 自带的背景色
+            var finalBgColor: NSColor? = docAttributes?[NSAttributedString.DocumentAttributeKey.backgroundColor] as? NSColor
+            
+            // 2. 只有当 RTF 自带背景色是 nil 时，我们才进行干预
+            var forcedDarkBackground = false
+            
+            if finalBgColor == nil {
+                // 🛑 强制设定为深色背景 (黑底)
+                // 这里使用了半透明黑色 (0.5)，你可以改为 NSColor.black 变成纯黑
+                finalBgColor = NSColor(red: 0.1, green: 0.1, blue: 0.1, alpha: 0.5)
+                forcedDarkBackground = true
             }
-            // 2. 只有文字明显是浅色时，才给深色背景
-            else if attrString.suggestsDarkBackground() {
-                detectedBgColor = NSColor(red: 0.1, green: 0.1, blue: 0.1, alpha: 1.0)
+            
+            // 3. 智能调整文字颜色：变成白字
+            // 如果我们强制使用了深色背景，或者原本背景就是深色的，我们需要确保文字能看清
+            let isBackgroundDark = finalBgColor?.isDarkColor ?? true // 借助你现有的扩展判断
+            
+            if isBackgroundDark || forcedDarkBackground {
+                mutableAttrString.enumerateAttributes(in: NSRange(location: 0, length: length), options: []) { attributes, range, _ in
+                    let currentColor = attributes[.foregroundColor] as? NSColor
+                    
+                    // 逻辑：如果文字没有颜色（默认），或者文字是黑色/深灰色
+                    // 就把它改成白色
+                    if currentColor == nil || (currentColor?.isBlackOrVeryDark ?? false) {
+                        mutableAttrString.addAttribute(.foregroundColor, value: NSColor.white.withAlphaComponent(0.95), range: range)
+                    }
+                    // 如果原本是亮色（比如代码高亮的粉色、浅蓝色），保持原样，在黑底上反而更好看
+                }
             }
-            // 3. 默认情况强制使用纯白背景，防止"深色模式下的黑字"问题
-            else {
-                detectedBgColor = NSColor.white
-            }
-            return (attrString, detectedBgColor)
+            
+            return (mutableAttrString, finalBgColor)
         }.value
+    }
+}
+
+// MARK: - 辅助扩展
+extension NSAttributedString {
+    /// 采样判断文本是否主要由深色构成
+    func isTextMostlyDark() -> Bool {
+        guard length > 0 else { return false }
+        var darkScore = 0
+        var sampleCount = 0
+        
+        // 只采样前 500 个字符以提高性能
+        let checkLength = min(length, 500)
+        
+        enumerateAttribute(.foregroundColor, in: NSRange(location: 0, length: checkLength), options: []) { value, range, _ in
+            if let color = value as? NSColor {
+                if color.isBlackOrVeryDark {
+                    darkScore += range.length
+                }
+            } else {
+                // 没有颜色属性通常默认为黑色
+                darkScore += range.length
+            }
+            sampleCount += range.length
+        }
+        
+        return Double(darkScore) / Double(sampleCount) > 0.5
+    }
+}
+
+extension NSColor {
+    /// 判断颜色是否接近黑色
+    var isBlackOrVeryDark: Bool {
+        guard let rgb = usingColorSpace(.sRGB) else { return true } // 无法转换通常假设为黑
+        let brightness = 0.299 * rgb.redComponent + 0.587 * rgb.greenComponent + 0.114 * rgb.blueComponent
+        return brightness < 0.3 // 阈值可以调节
     }
 }
 

@@ -75,16 +75,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         panel?.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         panel?.becomesKeyOnlyIfNeeded = true
         
-        // --- 核心修改 1：失去焦点时，调用统一的 closePanel ---
+        // 监听窗口失去焦点事件，直接关闭面板
         NotificationCenter.default.addObserver(forName: NSWindow.didResignKeyNotification, object: panel, queue: .main) { [weak self] _ in
-            guard let self = self else { return }
-            // 延时一点点，防止误判
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                if !(self.panel?.isKeyWindow ?? false) {
-                    // 这里原本只写了 orderOut，现在改为调用封装好的 closePanel
-                    self.closePanel()
-                }
-            }
+            self?.closePanel()
         }
         
         let contentView = ContentView(clipboard: clipboardManager)
@@ -96,11 +89,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     func closePanel() {
         guard let panel = panel, panel.isVisible else { return }
         
-        // 1. 隐藏窗口
-        panel.orderOut(nil)
+        // 1. 关闭预览窗口 (如果存在)
+        PreviewWindowManager.shared.hidePreview()
         
-        // 2. 发送关闭预览通知
-        NotificationCenter.default.post(name: Notification.Name("ClosePreviewWindow"), object: nil)
+        // 2. 隐藏窗口
+        panel.orderOut(nil)
         
         // 3. 创建延迟重置任务
         let task = DispatchWorkItem { [weak self] in
