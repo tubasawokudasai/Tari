@@ -131,6 +131,8 @@ struct RichTextView: NSViewRepresentable {
     }
 }
 
+// MARK: - RTF Helper for rich text parsing
+// MARK: - 改进后的 RTF Helper
 struct RTFHelper {
     static func parseAsync(data: Data) async -> (NSAttributedString?, NSColor?) {
         return await Task.detached(priority: .userInitiated) {
@@ -146,33 +148,36 @@ struct RTFHelper {
             let mutableAttrString = NSMutableAttributedString(attributedString: attrString)
             let length = mutableAttrString.length
             
-            // 1. 获取 RTF 自带的背景色
+            // 1. 分析文本主要亮度，决定是否需要切换背景色
+            // 如果大部分文字都是深色的（例如来自 Xcode 浅色模式），我们需要给它一个浅色背景
+            let isMostlyDarkText = attrString.isTextMostlyDark()
+            
+            // 2. 决定最终的背景色
+            // 如果原本 RTF 带背景色（例如网页复制），优先用原本的
             var finalBgColor: NSColor? = docAttributes?[NSAttributedString.DocumentAttributeKey.backgroundColor] as? NSColor
             
-            // 2. 只有当 RTF 自带背景色是 nil 时，我们才进行干预
-            var forcedDarkBackground = false
-            
             if finalBgColor == nil {
-                // 🛑 强制设定为深色背景 (黑底)
-                // 这里使用了半透明黑色 (0.5)，你可以改为 NSColor.black 变成纯黑
-                finalBgColor = NSColor(red: 0.1, green: 0.1, blue: 0.1, alpha: 0.5)
-                forcedDarkBackground = true
+                if isMostlyDarkText {
+                    // 如果文字主要是深色，建议使用浅灰色/白色背景，这样语法高亮看得最清楚
+                    finalBgColor = NSColor(white: 0.95, alpha: 0.9)
+                } else {
+                    // 如果文字主要是浅色（暗黑模式代码），或者没有颜色，使用深色玻璃背景
+                    finalBgColor = NSColor(red: 0.1, green: 0.1, blue: 0.1, alpha: 0.5)
+                }
             }
             
-            // 3. 智能调整文字颜色：变成白字
-            // 如果我们强制使用了深色背景，或者原本背景就是深色的，我们需要确保文字能看清
-            let isBackgroundDark = finalBgColor?.isDarkColor ?? true // 借助你现有的扩展判断
-            
-            if isBackgroundDark || forcedDarkBackground {
+            // 3. 智能调整文字颜色
+            // 只有当我们在“深色背景”下，且遇到“纯黑色”或“默认颜色”时，才将其改为白色
+            // 这样可以保留原本的语法高亮颜色
+            if !isMostlyDarkText { // 在深色背景模式下
                 mutableAttrString.enumerateAttributes(in: NSRange(location: 0, length: length), options: []) { attributes, range, _ in
                     let currentColor = attributes[.foregroundColor] as? NSColor
                     
-                    // 逻辑：如果文字没有颜色（默认），或者文字是黑色/深灰色
-                    // 就把它改成白色
+                    // 如果没有颜色（默认），或者是纯黑色
                     if currentColor == nil || (currentColor?.isBlackOrVeryDark ?? false) {
-                        mutableAttrString.addAttribute(.foregroundColor, value: NSColor.white.withAlphaComponent(0.95), range: range)
+                        mutableAttrString.addAttribute(.foregroundColor, value: NSColor.white.withAlphaComponent(0.9), range: range)
                     }
-                    // 如果原本是亮色（比如代码高亮的粉色、浅蓝色），保持原样，在黑底上反而更好看
+                    // 如果原本有颜色（比如语法高亮），就保持不动
                 }
             }
             
