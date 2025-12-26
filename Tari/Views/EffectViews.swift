@@ -231,99 +231,116 @@ struct PreviewView: View {
     @State private var scale: CGFloat = 1.0
     @State private var attributedString: NSAttributedString?
     @State private var detectedBackgroundColor: NSColor?
+    @State private var previewImage: NSImage? // 新增：用于存储解析后的图片
 
     var body: some View {
         VStack(spacing: 0) {
             HStack {
                 Text("剪贴板预览").font(.headline).padding(.leading)
                 Spacer()
+                Button(action: onClose) {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.title2)
+                        .foregroundColor(.gray)
+                }
+                .buttonStyle(.plain)
+                .padding(.trailing)
             }
             .frame(height: 40)
-            .background(
-            GlassEffectContainer(spacing: 50) {
-                Color.clear
-                    .glassEffect(in: Rectangle())
-            }
-        )
+            .background(VisualEffectView(material: .headerView, blendingMode: .withinWindow))
             
             if let item = item {
                 switch item.contentType {
                 case .image:
-                    // 图片预览 - 使用单一ScrollView解决嵌套滑动问题
-                    if let imageData = item.additionalData, let nsImage = NSImage(data: imageData) {
+                    if let nsImage = previewImage {
                         ScrollView([.horizontal, .vertical]) {
-                            VStack {
-                                HStack {
-                                    Image(nsImage: nsImage)
-                                        .resizable()
-                                        .aspectRatio(contentMode: .fit)
-                                        .frame(width: nsImage.size.width * scale, height: nsImage.size.height * scale)
-                                        .padding()
-                                }
-                            }
+                            Image(nsImage: nsImage)
+                                .resizable()
+                                .aspectRatio(contentMode: .fit)
+                                .frame(width: nsImage.size.width * scale, height: nsImage.size.height * scale)
+                                .padding()
                         }
                         .gesture(MagnificationGesture()
                             .onChanged { value in
                                 scale = value
                             }
                         )
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
                     } else {
-                        Text("无法加载图片")
-                            .padding()
-                            .frame(maxWidth: .infinity, alignment: .leading)
+                        VStack {
+                            ProgressView()
+                            Text("解析图片中...")
+                        }
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
                     }
+                    
                 case .text, .fileURL, .unknown:
-                    Group {
-                        if let attributedString = attributedString {
-                            // 直接使用RichTextView，它内部已经带了滚动条
-                            RichTextView(attributedString: attributedString, isEditable: false, backgroundColor: detectedBackgroundColor)
+                    if let attrString = attributedString {
+                        RichTextView(attributedString: attrString, isEditable: false, backgroundColor: detectedBackgroundColor)
+                            .padding()
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    } else {
+                        ScrollView {
+                            Text(content)
+                                .font(.system(size: 13, design: .monospaced))
+                                .foregroundColor((detectedBackgroundColor?.isDarkColor ?? false) ? .white : .primary)
                                 .padding()
-                                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                        } else {
-                            ScrollView {
-                                TextEditor(text: .constant(content))
-                                    .font(.system(size: 12, design: .monospaced))
-                                    // ✅ 修复点：根据 detectedBackgroundColor 调整文字颜色
-                                    // 如果 detectedBackgroundColor 为 nil，TextEditor 默认会适配系统颜色，通常没问题
-                                    // 但如果你强制了背景色，这里最好显式设置前景色
-                                    .foregroundColor(
-                                        (detectedBackgroundColor?.isDarkColor ?? false) ? .white : .primary
-                                    )
-                                    .padding()
-                                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                                    .background(Color.clear)
-                                    .lineSpacing(4)
-                            }
+                                .frame(maxWidth: .infinity, alignment: .leading)
                         }
                     }
                 }
             } else {
-                ScrollView {
-                    Text("加载中...")
-                        .padding()
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                }
+                ProgressView("正在查找条目...")
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
         .frame(minWidth: 600, minHeight: 400)
-        .background(
-            GlassEffectContainer(spacing: 100) {
-                Color.clear
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .glassEffect(in: RoundedRectangle(cornerRadius: 16))
-            }
-        )
+        .background(VisualEffectView(material: .contentBackground, blendingMode: .withinWindow))
         .task {
-            if let foundItem = manager.items.first(where: { $0.id == itemId }) {
-                self.item = foundItem
-                self.content = foundItem.text
-                
-                if let rtfData = foundItem.additionalData {
-                    let result = await RTFHelper.parseAsync(data: rtfData)
-                    self.attributedString = result.0
-                    self.detectedBackgroundColor = result.1
+            await loadData()
+        }
+    }
+
+    // 🔴 核心修复：同步 ItemCard 的多层级数据解析逻辑
+    private func loadData() async {
+        guard let foundItem = manager.items.first(where: { $0.id == itemId }) else { return }
+        self.item = foundItem
+        self.content = foundItem.text
+        
+        guard let archivedData = foundItem.additionalData else {
+            self.detectedBackgroundColor = nil
+            return
+        }
+
+        // 1. 解析数据字典 (支持 [[String: Data]] 和 [String: Data])
+        var foundDict: [String: Data]? = nil
+        if let multiItems = try? NSKeyedUnarchiver.unarchiveObject(with: archivedData) as? [[String: Data]] {
+            foundDict = multiItems.first
+        } else if let singleDict = try? NSKeyedUnarchiver.unarchiveObject(with: archivedData) as? [String: Data] {
+            foundDict = singleDict
+        }
+
+        guard let dataDict = foundDict else { return }
+
+        // 2. 根据类型提取内容
+        if foundItem.contentType == .image {
+            let imageTypes = [
+                NSPasteboard.PasteboardType.tiff.rawValue,
+                NSPasteboard.PasteboardType.png.rawValue,
+                "public.jpeg"
+            ]
+            for type in imageTypes {
+                if let imageData = dataDict[type], let img = NSImage(data: imageData) {
+                    self.previewImage = img
+                    self.detectedBackgroundColor = .white
+                    break
                 }
+            }
+        } else {
+            // RTF 解析
+            if let rtfData = dataDict[NSPasteboard.PasteboardType.rtf.rawValue] ?? dataDict["public.rtf"] {
+                let result = await RTFHelper.parseAsync(data: rtfData)
+                self.attributedString = result.0
+                self.detectedBackgroundColor = result.1
             }
         }
     }

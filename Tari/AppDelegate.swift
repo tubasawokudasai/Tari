@@ -46,6 +46,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         showMenuItem.keyEquivalentModifierMask = [.command, .shift]
         showMenuItem.target = self
         menu.addItem(showMenuItem)
+        
+        let clearMenuItem = NSMenuItem(title: "清空剪贴板", action: #selector(clearClipboard), keyEquivalent: "c")
+        clearMenuItem.keyEquivalentModifierMask = [.command, .shift]
+        clearMenuItem.target = self
+        menu.addItem(clearMenuItem)
+        
         menu.addItem(NSMenuItem.separator())
         let quitMenuItem = NSMenuItem(title: "退出", action: #selector(quitApp), keyEquivalent: "q")
         quitMenuItem.target = self
@@ -55,6 +61,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     
     @objc func quitApp() {
         NSApplication.shared.terminate(self)
+    }
+    
+    @objc func clearClipboard() {
+        clipboardManager.clearAll()
     }
     
     func setupPanel() {
