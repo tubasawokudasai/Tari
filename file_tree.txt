@@ -16,12 +16,13 @@
   - Views/               # 视图组件
     - EffectViews.swift
     - ItemCard.swift
+    - PreviewDialog.swift
   - AppDelegate.swift    # 应用委托
   - ContentView.swift    # 主内容视图
   - Persistence.swift    # 数据持久化
+  - PreviewWindowManager.swift  # 预览窗口管理器
   - TariApp.swift    # 应用入口
 - Tari.xcodeproj/    # Xcode 项目配置
-  - project.xcworkspace/
-  - xcuserdata/
   - project.pbxproj
-- build/                 # 构建输出目录（已忽略详细内容）
+- .gitignore         # Git 忽略配置
+- README.md          # 项目说明文档

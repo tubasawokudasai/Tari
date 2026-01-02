@@ -238,21 +238,16 @@ class ClipboardManager: ObservableObject {
     func pruneToFirstPage() {
         // 必须在主线程执行，确保 UI 状态同步
         DispatchQueue.main.async { [weak self] in
-            guard let self = self else { return }
-            
-            // 1. 截断数据
-            if self.items.count > self.pageSize {
-                self.items = Array(self.items.prefix(self.pageSize))
-            }
-            
-            // 2. 重置分页索引
-            self.currentPage = 1
-            self.hasMoreData = true
-            
-            // 3. 核心修复：强制滚动回顶部
-            // 这会通知 ContentView 中的 ScrollViewReader 跳转到 id 为 0 或顶部的位置
-            // 防止 UI 停留在底部从而立即触发 loadMoreItems
-            self.shouldScrollToTop = true
+                guard let self = self else { return }
+                
+                // 减少保留的项目数量
+                if self.items.count > self.pageSize / 2 {
+                    self.items = Array(self.items.prefix(self.pageSize / 2))
+                }
+                
+                self.currentPage = 1
+                self.hasMoreData = true
+                self.shouldScrollToTop = true
             
             print("DEBUG: 已重置回第一页并请求滚动到顶部")
         }
