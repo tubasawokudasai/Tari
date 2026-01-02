@@ -157,7 +157,7 @@ struct ContentView: View {
                 NSApp.keyWindow?.makeFirstResponder(nil)
                 // 如果当前有预览窗口打开，更新预览内容
                 if let currentPreviewId = PreviewWindowManager.shared.currentPreviewId, currentPreviewId != newId {
-                    if let selectedItem = displayItems.first(where: { $0.id == newId }) {
+                    if let selectedItem = clipboard.items.first(where: { $0.id == newId }) {
                         PreviewWindowManager.shared.showPreview(item: selectedItem, relativeTo: NSApp.keyWindow)
                     }
                 }
@@ -184,7 +184,7 @@ struct ContentView: View {
             copySelectedItem()
             return nil
         case 49: // Space
-            if let id = selectedId, let selectedItem = displayItems.first(where: { $0.id == id }) {
+            if let id = selectedId, let selectedItem = clipboard.items.first(where: { $0.id == id }) {
                 PreviewWindowManager.shared.togglePreview(item: selectedItem, mainWindow: NSApp.keyWindow)
             }
             return nil

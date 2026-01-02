@@ -60,6 +60,7 @@ struct PreviewDialog: View {
                                 .font(.system(size: 13, design: .monospaced))
                                 .foregroundColor(.white.opacity(0.9))
                                 .padding().frame(maxWidth: .infinity, alignment: .leading)
+                                .textSelection(.enabled)
                         }.frame(height: 300)
                     }
                 }

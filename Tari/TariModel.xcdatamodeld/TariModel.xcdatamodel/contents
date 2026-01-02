@@ -7,5 +7,7 @@
         <attribute name="creationTime" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
         <attribute name="contentType" optional="YES" attributeType="String"/>
         <attribute name="additionalData" optional="YES" attributeType="Binary" allowsExternalBinaryDataStorage="YES"/>
+        <attribute name="appName" optional="YES" attributeType="String"/>
+        <attribute name="appIcon" optional="YES" attributeType="Binary" allowsExternalBinaryDataStorage="YES"/>
     </entity>
 </model>

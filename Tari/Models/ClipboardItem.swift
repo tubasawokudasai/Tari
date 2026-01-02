@@ -21,10 +21,13 @@ struct ClipboardItem: Identifiable, Equatable, Transferable, Codable {
     let creationTime: Date
     let contentType: ClipboardContentType
     var additionalData: Data?
+    // 应用来源信息
+    let appName: String?
+    let appIcon: Data?
     
     // 增加 Equatable 实现，帮助 SwiftUI 减少不必要的重绘
     static func == (lhs: ClipboardItem, rhs: ClipboardItem) -> Bool {
-        return lhs.id == rhs.id && lhs.timestamp == rhs.timestamp && lhs.creationTime == rhs.creationTime
+        return lhs.id == rhs.id && lhs.timestamp == rhs.timestamp && lhs.creationTime == rhs.creationTime && lhs.appName == rhs.appName
     }
     
     // 创建粘贴板写入对象
@@ -77,7 +80,10 @@ struct ClipboardItem: Identifiable, Equatable, Transferable, Codable {
                 text: text,
                 timestamp: currentDate,
                 creationTime: currentDate,
-                contentType: .text
+                contentType: .text,
+                additionalData: nil,
+                appName: nil,
+                appIcon: nil
             )
         }
     }

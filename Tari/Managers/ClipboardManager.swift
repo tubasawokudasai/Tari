@@ -96,11 +96,88 @@ class ClipboardManager: ObservableObject {
             // 5. 归档存储
             let finalData = try? NSKeyedArchiver.archivedData(withRootObject: allItemsData, requiringSecureCoding: false)
             
-            print("DEBUG 捕获: 抓到了 \(allItemsData.count) 个 Items. 类型: \(detectedType)")
+            // 6. 获取应用来源信息
+            var appName: String? = nil
+            var appIcon: Data? = nil
             
-            // 6. 保存
+            // 从剪贴板项目中获取来源信息
+            for item in pbItems {
+                // 打印所有可用的剪贴板类型，用于调试
+                print("DEBUG 剪贴板类型: \(item.types)")
+                
+                // 尝试获取应用来源信息
+                if let sourceData = item.data(forType: NSPasteboard.PasteboardType("org.nspasteboard.source")) {
+                    if let source = String(data: sourceData, encoding: .utf8) {
+                        appName = source
+                        print("DEBUG 应用来源: \(source)")
+                        // 尝试获取应用图标
+                        if let bundleURL = NSWorkspace.shared.urlForApplication(withBundleIdentifier: source) {
+                            print("DEBUG 应用URL: \(bundleURL)")
+                            let icon = NSWorkspace.shared.icon(forFile: bundleURL.path)
+                            // 调整图标大小为18x18
+                            let size = NSSize(width: 18, height: 18)
+                            icon.size = size
+                            // 将 NSImage 转换为 Data
+                            if let tiffData = icon.tiffRepresentation {
+                                let bitmap = NSBitmapImageRep(data: tiffData)
+                                if let pngData = bitmap?.representation(using: .png, properties: [:]) {
+                                    appIcon = pngData
+                                    print("DEBUG 成功获取应用图标，大小: \(pngData.count) 字节")
+                                } else {
+                                    print("DEBUG 无法将位图转换为PNG")
+                                }
+                            } else {
+                                print("DEBUG 无法获取TIFF表示")
+                            }
+                        } else {
+                            print("DEBUG 无法找到应用URL，尝试其他方式")
+                            // 尝试获取当前活动应用
+                            if let frontmostApp = NSWorkspace.shared.frontmostApplication {
+                                appName = frontmostApp.bundleIdentifier
+                                print("DEBUG 使用当前活动应用: \(appName ?? "未知")")
+                                if let bundleURL = frontmostApp.bundleURL {
+                                    let icon = NSWorkspace.shared.icon(forFile: bundleURL.path)
+                                    icon.size = NSSize(width: 18, height: 18)
+                                    if let tiffData = icon.tiffRepresentation {
+                                        let bitmap = NSBitmapImageRep(data: tiffData)
+                                        if let pngData = bitmap?.representation(using: .png, properties: [:]) {
+                                            appIcon = pngData
+                                            print("DEBUG 成功获取当前应用图标")
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        break
+                    } else {
+                        print("DEBUG 无法将来源数据转换为字符串")
+                    }
+                } else {
+                    print("DEBUG 无法获取来源数据，尝试获取当前活动应用")
+                    // 尝试获取当前活动应用
+                    if let frontmostApp = NSWorkspace.shared.frontmostApplication {
+                        appName = frontmostApp.bundleIdentifier
+                        print("DEBUG 使用当前活动应用: \(appName ?? "未知")")
+                        if let bundleURL = frontmostApp.bundleURL {
+                            let icon = NSWorkspace.shared.icon(forFile: bundleURL.path)
+                            icon.size = NSSize(width: 18, height: 18)
+                            if let tiffData = icon.tiffRepresentation {
+                                let bitmap = NSBitmapImageRep(data: tiffData)
+                                if let pngData = bitmap?.representation(using: .png, properties: [:]) {
+                                    appIcon = pngData
+                                    print("DEBUG 成功获取当前应用图标")
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            
+            print("DEBUG 捕获: 抓到了 \(allItemsData.count) 个 Items. 类型: \(detectedType), 应用名称: \(appName ?? "无"), 应用图标: \(appIcon != nil ? "有" : "无")")
+            
+            // 7. 保存
             // 注意：这里我们传入 detectedType，这样 ItemCard 才能正确显示图标
-            handleNewContent(text: displayString, type: detectedType, data: finalData)
+            saveNewItem(text: displayString, contentType: detectedType, additionalData: finalData, appName: appName, appIcon: appIcon)
         }
 
     // MARK: - 写入剪贴板 (最终修复：多项目还原)
@@ -200,19 +277,71 @@ class ClipboardManager: ObservableObject {
         }
     }
     
-    private func handleNewContent(text: String, type: ClipboardContentType, data: Data?) {
-        if let existingIndex = items.firstIndex(where: { $0.text == text && $0.contentType == type }) {
-            let id = items[existingIndex].id
-            moveItemToTop(id: id)
+    private func handleNewContent(text: String, type: ClipboardContentType, data: Data?, appName: String? = nil, appIcon: Data? = nil) {
+        // 完善去重逻辑：考虑text、contentType和additionalData
+        let isDuplicate = items.contains { item in
+            item.text == text && 
+            item.contentType == type && 
+            item.additionalData == data
+        }
+        
+        if isDuplicate {
+            // 如果存在完全相同的项目，将其移到顶部并更新应用信息
+            if let existingIndex = items.firstIndex(where: { 
+                $0.text == text && 
+                $0.contentType == type && 
+                $0.additionalData == data 
+            }) {
+                let id = items[existingIndex].id
+                // 更新内存中的项目
+                items[existingIndex] = ClipboardItem(id: id, text: text, timestamp: Date(), creationTime: items[existingIndex].creationTime, contentType: type, additionalData: data, appName: appName, appIcon: appIcon)
+                // 更新数据库中的项目
+                context.perform {
+                    let request: NSFetchRequest<ClipboardEntity> = ClipboardEntity.fetchRequest()
+                    request.predicate = NSPredicate(format: "id == %@", id as CVarArg)
+                    if let entity = try? self.context.fetch(request).first {
+                        entity.timestamp = Date()
+                        entity.appName = appName
+                        entity.appIcon = appIcon
+                        try? PersistenceController.shared.save()
+                    }
+                }
+            }
             return
         }
-        saveNewItem(text: text, contentType: type, additionalData: data)
+        
+        // 检查是否存在内容相同但类型或附加数据不同的项目
+        if let existingIndex = items.firstIndex(where: { $0.text == text }) {
+            // 如果存在类似项目，不保存新的
+            return
+        }
+        
+        saveNewItem(text: text, contentType: type, additionalData: data, appName: appName, appIcon: appIcon)
     }
 
-    private func saveNewItem(text: String, contentType: ClipboardContentType, additionalData: Data?) {
+    private func saveNewItem(text: String, contentType: ClipboardContentType, additionalData: Data?, appName: String? = nil, appIcon: Data? = nil) {
+        // 先检查Core Data中是否已有相同的项目，防止数据库中存储重复数据
+        let fetchRequest: NSFetchRequest<ClipboardEntity> = ClipboardEntity.fetchRequest()
+        fetchRequest.predicate = NSPredicate(format: "text == %@ AND contentType == %@", text, contentType.rawValue)
+        
+        var entityExists = false
+        context.performAndWait {
+            do {
+                let existingEntities = try context.fetch(fetchRequest)
+                entityExists = !existingEntities.isEmpty
+            } catch {
+                print("检查重复数据失败: \(error)")
+            }
+        }
+        
+        if entityExists {
+            // 如果数据库中已存在，不保存新的
+            return
+        }
+        
         let newId = UUID()
         let now = Date()
-        let newItem = ClipboardItem(id: newId, text: text, timestamp: now, creationTime: now, contentType: contentType, additionalData: additionalData)
+        let newItem = ClipboardItem(id: newId, text: text, timestamp: now, creationTime: now, contentType: contentType, additionalData: additionalData, appName: appName, appIcon: appIcon)
         
         DispatchQueue.main.async {
             self.items.insert(newItem, at: 0)
@@ -229,6 +358,8 @@ class ClipboardManager: ObservableObject {
             entity.creationTime = now
             entity.contentType = contentType.rawValue
             entity.additionalData = additionalData
+            entity.appName = appName
+            entity.appIcon = appIcon
             try? PersistenceController.shared.save()
         }
     }
@@ -261,7 +392,9 @@ class ClipboardManager: ObservableObject {
                         timestamp: ts,
                         creationTime: entity.creationTime ?? ts,
                         contentType: ClipboardContentType(rawValue: entity.contentType ?? "") ?? .text,
-                        additionalData: entity.additionalData
+                        additionalData: entity.additionalData,
+                        appName: entity.appName,
+                        appIcon: entity.appIcon
                     )
                 }
                 
@@ -306,7 +439,9 @@ class ClipboardManager: ObservableObject {
                     id: id, text: text, timestamp: ts,
                     creationTime: entity.creationTime ?? ts,
                     contentType: ClipboardContentType(rawValue: entity.contentType ?? "") ?? .text,
-                    additionalData: entity.additionalData
+                    additionalData: entity.additionalData,
+                    appName: entity.appName,
+                    appIcon: entity.appIcon
                 )
             }
         } catch { return [] }
@@ -316,7 +451,7 @@ class ClipboardManager: ObservableObject {
         guard let index = items.firstIndex(where: { $0.id == id }) else { return }
         let item = items.remove(at: index)
         let newTimestamp = Date()
-        let updatedItem = ClipboardItem(id: item.id, text: item.text, timestamp: newTimestamp, creationTime: item.creationTime, contentType: item.contentType, additionalData: item.additionalData)
+        let updatedItem = ClipboardItem(id: item.id, text: item.text, timestamp: newTimestamp, creationTime: item.creationTime, contentType: item.contentType, additionalData: item.additionalData, appName: item.appName, appIcon: item.appIcon)
         items.insert(updatedItem, at: 0)
         
         context.perform {
