@@ -60,13 +60,22 @@ class ClipboardManager: ObservableObject {
     
     // MARK: - 指纹生成函数
     private func makeClipboardFingerprint(allItemsData: [[String: Data]]) -> String {
-        // 1️⃣ 先尝试 canonical text
+        // 1️⃣ 先检查是否为文件URL
+        for dict in allItemsData {
+            for (type, data) in dict {
+                if type == "public.file-url", let fileURL = String(data: data, encoding: .utf8) {
+                    return "file:" + fileURL
+                }
+            }
+        }
+        
+        // 2️⃣ 尝试 canonical text
         if let canonicalText = extractCanonicalText(from: allItemsData),
            !canonicalText.isEmpty {
             return "text:" + canonicalText
         }
 
-        // 2️⃣ 否则退回 payload hash（图片 / 二进制）
+        // 3️⃣ 否则退回 payload hash（图片 / 二进制）
         var hasher = SHA256()
 
         for dict in allItemsData {
@@ -179,7 +188,11 @@ class ClipboardManager: ObservableObject {
             // 8. 生成并检查指纹
             let fingerprint = makeClipboardFingerprint(allItemsData: allItemsData)
             if dataStore.hasItem(with: fingerprint) {
-                return // 已经存在，不保存
+                // 如果已经存在，将其移到顶部并更新时间戳
+                if let itemId = dataStore.fetchItemIdByFingerprint(fingerprint: fingerprint) {
+                    moveItemToTop(id: itemId)
+                }
+                return
             }
             
             // 保存：使用 ClipboardDataStore 保存新项
@@ -251,7 +264,15 @@ class ClipboardManager: ObservableObject {
         }
         
         // 检查指纹是否已存在
-        if fingerprint.isEmpty || dataStore.hasItem(with: fingerprint) {
+        if fingerprint.isEmpty {
+            return
+        }
+        
+        if dataStore.hasItem(with: fingerprint) {
+            // 如果已经存在，将其移到顶部并更新时间戳
+            if let itemId = dataStore.fetchItemIdByFingerprint(fingerprint: fingerprint) {
+                moveItemToTop(id: itemId)
+            }
             return
         }
         

@@ -26,6 +26,17 @@ final class ClipboardDataStore {
         return (try? context.count(for: request)) ?? 0 > 0
     }
     
+    // MARK: - 根据指纹获取项目ID
+    func fetchItemIdByFingerprint(fingerprint: String) -> UUID? {
+        let request: NSFetchRequest<ClipboardEntity> = ClipboardEntity.fetchRequest()
+        request.predicate = NSPredicate(format: "fingerprint == %@", fingerprint)
+        request.fetchLimit = 1
+        request.propertiesToFetch = ["id"]
+        
+        guard let entity = try? context.fetch(request).first else { return nil }
+        return entity.id
+    }
+    
 
     
     // MARK: - 保存新的剪贴板项目

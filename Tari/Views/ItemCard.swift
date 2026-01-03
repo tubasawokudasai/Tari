@@ -67,6 +67,10 @@ struct ItemCard: View, Equatable {
         }
     }
     
+    private var isStructuredText: Bool {
+        item.text.contains("\t") || item.text.contains("|")
+    }
+    
 
 
     // MARK: - Header View
@@ -117,8 +121,17 @@ struct ItemCard: View, Equatable {
     @ViewBuilder
     private var contentDisplayView: some View {
         switch item.contentType {
-        case .image: imageContentView
-        default: textContentView
+        case .image:
+            imageContentView
+
+        case .fileURL:
+            fileContentView
+
+        case .text:
+            textContentView
+
+        default:
+            unknownContentView
         }
     }
     
@@ -131,17 +144,72 @@ struct ItemCard: View, Equatable {
                 .frame(maxHeight: 180)
                 .cornerRadius(8)
         } else {
-            placeholderView
+            RoundedRectangle(cornerRadius: 8)
+                .fill(Color.black.opacity(0.04))
         }
+    }
+    
+    private var fileExtension: String {
+        URL(fileURLWithPath: fileName).pathExtension.uppercased()
+    }
+
+    private var fileContentView: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(fileName)
+                .font(.system(size: 13, weight: .medium))
+                .lineLimit(2)
+
+            HStack(spacing: 6) {
+                Text("文件")
+                    .font(.system(size: 10))
+                    .foregroundColor(.secondary)
+                    
+                Text(fileExtension)
+                    .font(.system(size: 10, weight: .bold))
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .background(Color.black.opacity(0.06))
+                    .cornerRadius(4)
+            }
+        }
+    }
+    
+    private var fileName: String {
+        if let url = URL(string: item.text) {
+            return url.lastPathComponent
+        }
+        return item.text
     }
     
     @ViewBuilder
     private var textContentView: some View {
+        if isStructuredText {
+            structuredTextView
+        } else {
+            plainTextView
+        }
+    }
+    
+    private var plainTextView: some View {
         Text(contentText.prefix(300))
             .lineLimit(8)
             .font(.system(size: 12))
             .foregroundColor(.black.opacity(0.8))
             .multilineTextAlignment(.leading)
+    }
+    
+    private var structuredTextView: some View {
+        Text(contentText.prefix(200))
+            .font(.system(size: 11, design: .monospaced))
+            .lineLimit(6)
+            .padding(8)
+            .background(Color.black.opacity(0.04))
+            .cornerRadius(6)
+    }
+    
+    private var unknownContentView: some View {
+        RoundedRectangle(cornerRadius: 8)
+            .fill(Color.black.opacity(0.04))
     }
 
     private var placeholderView: some View {

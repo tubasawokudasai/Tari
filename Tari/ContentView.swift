@@ -294,18 +294,29 @@ struct DraggableItemCard: View {
         // ✅ 核心修复：onDrag 和 dropDestination 必须在同一个 View 层级上
         .onDrag {
             // 1. 立即锁定拖拽对象
-            if NSApp.isActive {
-                self.draggedItem = item
-            }
+            self.draggedItem = item
             // 2. 只传递id而不是完整数据
             let provider = NSItemProvider()
             provider.registerObject(item.id.uuidString as NSString, visibility: .ownProcess)
             return provider
         }
-        .dropDestination(for: ClipboardListItem.self) { items, _ in
+        .dropDestination(for: String.self) { items, location in
+            // 当释放鼠标时，也执行排序逻辑
+            if let dragged = self.draggedItem, dragged.id != item.id {
+                if let sourceIndex = clipboard.items.firstIndex(where: { $0.id == dragged.id }),
+                   let targetIndex = clipboard.items.firstIndex(where: { $0.id == item.id }) {
+                    
+                    if sourceIndex != targetIndex {
+                        withAnimation(.spring()) {
+                            clipboard.moveItem(from: sourceIndex, to: targetIndex)
+                        }
+                    }
+                }
+            }
             self.draggedItem = nil
             return true
         } isTargeted: { isTargeted in
+            // 悬停时也继续处理，提供更流畅的体验
             handleDropTargetChange(isTargeted: isTargeted)
         }
     }
