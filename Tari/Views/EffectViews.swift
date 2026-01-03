@@ -227,7 +227,7 @@ struct PreviewView: View {
     @ObservedObject var manager: ClipboardManager
     var onClose: () -> Void
     @State private var content: String = "加载中..."
-    @State private var item: ClipboardItem?
+    @State private var item: ClipboardListItem?
     @State private var scale: CGFloat = 1.0
     @State private var attributedString: NSAttributedString?
     @State private var detectedBackgroundColor: NSColor?
@@ -306,17 +306,25 @@ struct PreviewView: View {
         self.item = foundItem
         self.content = foundItem.text
         
-        guard let archivedData = foundItem.additionalData else {
+        // 使用ClipboardDataStore获取完整的archivedData
+        guard let archivedData = ClipboardDataStore.shared.fetchArchivedData(id: foundItem.id) else {
             self.detectedBackgroundColor = nil
             return
         }
 
         // 1. 解析数据字典 (支持 [[String: Data]] 和 [String: Data])
         var foundDict: [String: Data]? = nil
-        if let multiItems = try? NSKeyedUnarchiver.unarchiveObject(with: archivedData) as? [[String: Data]] {
-            foundDict = multiItems.first
-        } else if let singleDict = try? NSKeyedUnarchiver.unarchiveObject(with: archivedData) as? [String: Data] {
-            foundDict = singleDict
+        do {
+            // 使用新的 API 尝试解析新格式 [[String: Data]]
+            if let newFormat = try NSKeyedUnarchiver.unarchivedObject(ofClasses: [NSArray.self, NSDictionary.self, NSString.self, NSData.self], from: archivedData) as? [[String: Data]] {
+                foundDict = newFormat.first
+            }
+            // 使用新的 API 尝试解析旧格式 [String: Data]
+            else if let oldFormat = try NSKeyedUnarchiver.unarchivedObject(ofClasses: [NSDictionary.self, NSString.self, NSData.self], from: archivedData) as? [String: Data] {
+                foundDict = oldFormat
+            }
+        } catch {
+            print("解析剪贴板数据失败: \(error)")
         }
 
         guard let dataDict = foundDict else { return }

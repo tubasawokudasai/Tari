@@ -9,5 +9,6 @@
         <attribute name="additionalData" optional="YES" attributeType="Binary" allowsExternalBinaryDataStorage="YES"/>
         <attribute name="appName" optional="YES" attributeType="String"/>
         <attribute name="appIcon" optional="YES" attributeType="Binary" allowsExternalBinaryDataStorage="YES"/>
+        <attribute name="fingerprint" optional="YES" attributeType="String" indexed="YES" unique="YES"/>
     </entity>
 </model>

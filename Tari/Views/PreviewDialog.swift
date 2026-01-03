@@ -9,20 +9,20 @@ import SwiftUI
 import AppKit
 
 struct PreviewDialog: View {
-    let item: ClipboardItem
+    let itemID: UUID
     var onClose: () -> Void
-    var clipboard: ClipboardManager?
     
+    @State private var contentType: ClipboardContentType = .text
     @State private var content: String = "加载中..."
     @State private var attributedString: NSAttributedString?
     @State private var detectedBackgroundColor: NSColor?
-    @State private var previewImage: NSImage? // 新增：用于存储解析后的图片
+    @State private var previewImage: NSImage? // 用于存储解析后的图片
     
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             // 顶部标题栏 (保持原样)
             HStack {
-                Text(item.contentType == .image ? "图片预览" : "文本预览")
+                Text(contentType == .image ? "图片预览" : "文本预览")
                     .font(.system(size: 13, weight: .semibold))
                     .foregroundColor(.white.opacity(0.9))
                 Spacer()
@@ -38,7 +38,7 @@ struct PreviewDialog: View {
             
             // 内容区域
             Group {
-                if item.contentType == .image {
+                if contentType == .image {
                     if let nsImage = previewImage {
                         GeometryReader { geo in
                             Image(nsImage: nsImage)
@@ -72,14 +72,27 @@ struct PreviewDialog: View {
         .frame(width: 450)
         .background(VisualEffectView(material: .hudWindow, blendingMode: .behindWindow).clipShape(RoundedRectangle(cornerRadius: 12)))
         .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.white.opacity(0.15), lineWidth: 1))
-        .task {
+        .task(id: itemID) {
             await loadPreviewData()
+        }
+        .onDisappear {
+            // 释放资源，避免内存泄漏
+            previewImage = nil
+            attributedString = nil
+            detectedBackgroundColor = nil
         }
     }
     
     private func loadPreviewData() async {
-        self.content = item.text
-        guard let archivedData = item.additionalData else { return }
+        // 1. 先获取轻量级列表项信息
+        guard let listItem = ClipboardDataStore.shared.fetchListItemById(id: itemID) else { return }
+        
+        // 更新基本信息
+        self.content = listItem.text
+        self.contentType = listItem.contentType
+        
+        // 2. 按需加载完整数据
+        guard let archivedData = ClipboardDataStore.shared.fetchArchivedData(id: itemID) else { return }
         
         // 🟢 关键修复：解析 [[String: Data]]
         var foundDict: [String: Data]? = nil
@@ -91,7 +104,7 @@ struct PreviewDialog: View {
         
         guard let dataDict = foundDict else { return }
         
-        if item.contentType == .image {
+        if listItem.contentType == .image {
             let imageTypes = [NSPasteboard.PasteboardType.tiff.rawValue, NSPasteboard.PasteboardType.png.rawValue, "public.jpeg"]
             for type in imageTypes {
                 if let imageData = dataDict[type], let img = NSImage(data: imageData) {

@@ -15,7 +15,7 @@ struct ContentView: View {
     }
     
     // 拖拽排序相关状态
-    @State private var draggedItem: ClipboardItem?
+    @State private var draggedItem: ClipboardListItem?
     
     // ✅ 新增：用于存储 ScrollView 的可见宽度，用来计算触发时机
     @State private var scrollViewWidth: CGFloat = 0
@@ -23,7 +23,7 @@ struct ContentView: View {
     // 添加窗口焦点监听
     private let windowDidBecomeKey = NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)
     
-    var displayItems: [ClipboardItem] {
+    var displayItems: [ClipboardListItem] {
         if searchText.isEmpty {
             return clipboard.items
         } else {
@@ -157,9 +157,7 @@ struct ContentView: View {
                 NSApp.keyWindow?.makeFirstResponder(nil)
                 // 如果当前有预览窗口打开，更新预览内容
                 if let currentPreviewId = PreviewWindowManager.shared.currentPreviewId, currentPreviewId != newId {
-                    if let selectedItem = clipboard.items.first(where: { $0.id == newId }) {
-                        PreviewWindowManager.shared.showPreview(item: selectedItem, relativeTo: NSApp.keyWindow)
-                    }
+                    PreviewWindowManager.shared.showPreview(itemID: newId!, relativeTo: NSApp.keyWindow)
                 }
             } else {
                 PreviewWindowManager.shared.hidePreview()
@@ -184,8 +182,8 @@ struct ContentView: View {
             copySelectedItem()
             return nil
         case 49: // Space
-            if let id = selectedId, let selectedItem = clipboard.items.first(where: { $0.id == id }) {
-                PreviewWindowManager.shared.togglePreview(item: selectedItem, mainWindow: NSApp.keyWindow)
+            if let id = selectedId {
+                PreviewWindowManager.shared.togglePreview(itemID: id, mainWindow: NSApp.keyWindow)
             }
             return nil
         default: break
@@ -194,15 +192,15 @@ struct ContentView: View {
     }
     
     func copySelectedItem() {
-        guard let id = selectedId, let item = clipboard.items.first(where: { $0.id == id }) else { return }
-        clipboard.copyItemToClipboard(item: item)
+        guard let id = selectedId else { return }
+        clipboard.copyItemToClipboard(id: id)
         clipboard.moveItemToTop(id: id)
         hideMainPanels()
     }
     
-    func copyAndPaste(item: ClipboardItem) {
+    func copyAndPaste(item: ClipboardListItem) {
         // 1. 先写入剪贴板 (极快)
-        clipboard.copyItemToClipboard(item: item)
+        clipboard.copyItemToClipboard(id: item.id)
         
         // 2. 立即隐藏窗口 (让用户感觉响应最快)
         NSApp.hide(nil)
@@ -279,11 +277,11 @@ struct LoadMoreTrigger: View {
 
 // 提取可拖拽的卡片到单独的结构体，减少 ContentView 的复杂性
 struct DraggableItemCard: View {
-    let item: ClipboardItem
+    let item: ClipboardListItem
     let isSelected: Bool
     let onTapSelect: () -> Void
     let onTapDouble: () -> Void
-    @Binding var draggedItem: ClipboardItem?
+    @Binding var draggedItem: ClipboardListItem?
     @ObservedObject var clipboard: ClipboardManager
     
     var body: some View {
@@ -299,10 +297,12 @@ struct DraggableItemCard: View {
             if NSApp.isActive {
                 self.draggedItem = item
             }
-            // 2. 调用模型的方法生成数据
-            return item.createItemProvider()
+            // 2. 只传递id而不是完整数据
+            let provider = NSItemProvider()
+            provider.registerObject(item.id.uuidString as NSString, visibility: .ownProcess)
+            return provider
         }
-        .dropDestination(for: ClipboardItem.self) { items, _ in
+        .dropDestination(for: ClipboardListItem.self) { items, _ in
             self.draggedItem = nil
             return true
         } isTargeted: { isTargeted in

@@ -262,7 +262,8 @@
 				CURRENT_PROJECT_VERSION = 1;
 				ENABLE_APP_SANDBOX = NO;
 				ENABLE_PREVIEWS = YES;
-				GENERATE_INFOPLIST_FILE = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = Tari/Info.plist;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.productivity";
 				INFOPLIST_KEY_LSUIElement = YES;
 				INFOPLIST_KEY_NSAppleEventsUsageDescription = "需要此权限来自动粘贴内容到其他应用。";
@@ -281,6 +282,7 @@
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
 				SWIFT_VERSION = 5.0;
+				UTExportedTypeDeclarations = "{\n    UTTypeConformsTo =     (\n        \"public.item\"\n    );\n    UTTypeDescription = \"Clipboard Item\";\n    UTTypeIdentifier = \"com.tari.clipboarditem\";\n    UTTypeTagSpecification =     {\n        \"public.filename-extension\" = clipboarditem;\n    };\n}";
 			};
 			name = Debug;
 		};
@@ -294,7 +296,8 @@
 				CURRENT_PROJECT_VERSION = 1;
 				ENABLE_APP_SANDBOX = NO;
 				ENABLE_PREVIEWS = YES;
-				GENERATE_INFOPLIST_FILE = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = Tari/Info.plist;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.productivity";
 				INFOPLIST_KEY_LSUIElement = YES;
 				INFOPLIST_KEY_NSAppleEventsUsageDescription = "需要此权限来自动粘贴内容到其他应用。";
@@ -313,6 +316,7 @@
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
 				SWIFT_VERSION = 5.0;
+				UTExportedTypeDeclarations = "{\n    UTTypeConformsTo =     (\n        \"public.item\"\n    );\n    UTTypeDescription = \"Clipboard Item\";\n    UTTypeIdentifier = \"com.tari.clipboarditem\";\n    UTTypeTagSpecification =     {\n        \"public.filename-extension\" = clipboarditem;\n    };\n}";
 			};
 			name = Release;
 		};

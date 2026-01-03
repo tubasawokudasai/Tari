@@ -33,16 +33,17 @@ class IconColorCache { // 改为 Class，因为 NSCache 是引用类型
 }
 
 struct ItemCard: View, Equatable {
-    let item: ClipboardItem
+    let item: ClipboardListItem
     let isSelected: Bool
     let onTapSelect: () -> Void
     let onTapDouble: () -> Void
     
-    @State private var cachedAttributedString: NSAttributedString?
-    @State private var cachedBackgroundColor: NSColor?
-    @State private var cachedImage: NSImage?
-    @State private var cachedAppIcon: NSImage?
-    @State private var cachedThemeColor: Color = Color.black.opacity(0.8)
+    @State private var tempImage: NSImage?
+    @State private var tempAppIcon: NSImage?
+    @State private var tempThemeColor: Color = Color.black.opacity(0.8)
+    
+    // 使用数据存储层
+    private let dataStore = ClipboardDataStore.shared
     
     static func == (lhs: ItemCard, rhs: ItemCard) -> Bool {
         return lhs.item.id == rhs.item.id && lhs.isSelected == rhs.isSelected
@@ -66,12 +67,7 @@ struct ItemCard: View, Equatable {
         }
     }
     
-    private var dynamicTextColor: Color {
-        if let bgColor = cachedBackgroundColor {
-            return bgColor.isDarkColor ? .white : .black.opacity(0.8)
-        }
-        return .black.opacity(0.8)
-    }
+
 
     // MARK: - Header View
     private var headerView: some View {
@@ -91,7 +87,7 @@ struct ItemCard: View, Equatable {
             
             Spacer(minLength: 0)
             
-            if let appIcon = cachedAppIcon {
+            if let appIcon = tempAppIcon {
                 Image(nsImage: appIcon)
                     .resizable()
                     .aspectRatio(contentMode: .fill)
@@ -102,7 +98,7 @@ struct ItemCard: View, Equatable {
             }
         }
         .frame(height: fixedHeaderHeight)
-        .background(cachedThemeColor)
+        .background(tempThemeColor)
     }
     
     // MARK: - Content View
@@ -114,7 +110,7 @@ struct ItemCard: View, Equatable {
         .padding(10)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
-            Color(nsColor: cachedBackgroundColor ?? .white)
+            Color(nsColor: .white)
         )
     }
     
@@ -128,7 +124,7 @@ struct ItemCard: View, Equatable {
     
     @ViewBuilder
     private var imageContentView: some View {
-        if let nsImage = cachedImage {
+        if let nsImage = tempImage {
             Image(nsImage: nsImage)
                 .resizable()
                 .aspectRatio(contentMode: .fit)
@@ -141,20 +137,11 @@ struct ItemCard: View, Equatable {
     
     @ViewBuilder
     private var textContentView: some View {
-        if let attrString = cachedAttributedString {
-            RichTextView(
-                attributedString: attrString,
-                isEditable: false,
-                backgroundColor: cachedBackgroundColor
-            )
-            .allowsHitTesting(false)
-        } else {
-            Text(contentText.prefix(300))
-                .lineLimit(8)
-                .font(.system(size: 12))
-                .foregroundColor(dynamicTextColor)
-                .multilineTextAlignment(.leading)
-        }
+        Text(contentText.prefix(300))
+            .lineLimit(8)
+            .font(.system(size: 12))
+            .foregroundColor(.black.opacity(0.8))
+            .multilineTextAlignment(.leading)
     }
 
     private var placeholderView: some View {
@@ -184,53 +171,33 @@ struct ItemCard: View, Equatable {
         .simultaneousGesture(TapGesture(count: 1).onEnded { _ in onTapSelect() })
         .contentShape(Rectangle())
         .task(id: item.id) { await loadPreviewData() }
+        .onDisappear {
+            // 释放资源，避免内存泄漏
+            tempImage = nil
+            tempAppIcon = nil
+        }
     }
     
-    // MARK: - 2. 修改后的数据加载逻辑 (接入缓存)
+    // MARK: - 按需加载预览数据
     private func loadPreviewData() async {
-        // 1. 图标处理
-        if let appIconData = item.appIcon {
-            // 将纯计算/内存操作放入 Task
-            let (icon, color) = await Task.detached {
-                return autoreleasepool { () -> (NSImage?, Color?) in
-                    let thumb = ImageDownsampler.downsample(imageData: appIconData, to: CGSize(width: 52, height: 52))
-                    
-                    // 查缓存
-                    if let cached = IconColorCache.shared.color(for: appIconData) {
-                        return (thumb, cached)
-                    }
-                    
-                    // 计算颜色
-                    let calcThumb = ImageDownsampler.downsample(imageData: appIconData, to: CGSize(width: 24, height: 24))
-                    let rawColor = calcThumb?.dominantColor()
-                    // ... 你的颜色转换逻辑 ...
-                    let finalColor = rawColor != nil ? Color(nsColor: rawColor!) : nil
-                    
-                    if let c = finalColor {
-                        IconColorCache.shared.save(c, for: appIconData)
-                    }
-                    
-                    return (thumb, finalColor)
-                }
-            }.value
+        // 1. 应用图标处理
+        if let appIcon = await AppIconProvider.shared.icon(for: item.appName) {
+            tempAppIcon = appIcon
             
-            if let i = icon { self.cachedAppIcon = i }
-            if let c = color { self.cachedThemeColor = c }
+            // 计算主题颜色
+            if let dominantColor = appIcon.dominantColor() {
+                tempThemeColor = Color(nsColor: dominantColor)
+            }
         }
         
-        // 2. 内容图片处理
-        guard let archivedData = item.additionalData else { return }
-        
+        // 2. 图片内容处理
         if item.contentType == .image {
-            let thumb = await Task.detached {
-                return autoreleasepool { () -> NSImage? in
-                     // ... 解档逻辑 ...
-                     // ... 找到 imageData ...
-                     // return ImageDownsampler.downsample(...)
-                     return nil // 占位
-                }
-            }.value
-            if let t = thumb { self.cachedImage = t }
+            if let archivedData = dataStore.fetchArchivedData(id: item.id),
+               let image = NSImage(data: archivedData) {
+                // 生成缩略图
+                let thumb = ImageDownsampler.downsample(imageData: archivedData, to: CGSize(width: 200, height: 200))
+                tempImage = thumb ?? image
+            }
         }
     }
     

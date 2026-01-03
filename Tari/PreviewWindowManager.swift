@@ -6,13 +6,14 @@ class PreviewWindowManager: ObservableObject {
     static let shared = PreviewWindowManager()
     
     private var previewPanel: NSPanel?
+    private var hostingView: NSHostingView<PreviewDialog>?
     
     // 保存当前正在预览的 ID，用于 UI 状态绑定
     @Published var currentPreviewId: UUID?
     
     private init() {}
     
-    func showPreview(item: ClipboardItem, relativeTo mainWindow: NSWindow?) {
+    func showPreview(itemID: UUID, relativeTo mainWindow: NSWindow?) {
         // 1. 如果窗口不存在，创建它
         if previewPanel == nil {
             createPanel()
@@ -22,18 +23,22 @@ class PreviewWindowManager: ObservableObject {
         // 这里我们把 PreviewDialog 包装在 NSHostingView 中
         // 注意：我们需要传入 onClose 回调
         let contentView = PreviewDialog(
-            item: item,
-            onClose: { [weak self] in self?.hidePreview() },
-            clipboard: ClipboardManager() // 这里其实只需用来复制，稍微调整 PreviewDialog 逻辑即可
+            itemID: itemID,
+            onClose: { [weak self] in self?.hidePreview() }
         )
         
-        previewPanel?.contentView = NSHostingView(rootView: contentView)
+        if let hostingView { 
+            hostingView.rootView = contentView
+        } else { 
+            let hv = NSHostingView(rootView: contentView)
+            previewPanel?.contentView = hv
+            hostingView = hv
+        }
         
         // 3. 计算位置：在主窗口正上方
         if let mainFrame = mainWindow?.frame {
-            // 预览窗口大小 (假设 PreviewDialog 是固定的或者自适应的，这里给个大概初始值，SwiftUI 会撑开)
+            // 预览窗口大小 (假设 PreviewDialog 是固定的或者自适应的)
             let panelWidth: CGFloat = 450
-            let panelHeight: CGFloat = 400
             
             // 水平居中于主窗口
             let xPos = mainFrame.minX + (mainFrame.width - panelWidth) / 2
@@ -41,12 +46,12 @@ class PreviewWindowManager: ObservableObject {
             // 垂直位于主窗口上方 (留 10px 间距)
             let yPos = mainFrame.maxY + 10
             
-            previewPanel?.setFrame(NSRect(x: xPos, y: yPos, width: panelWidth, height: panelHeight), display: true)
+            previewPanel?.setFrameOrigin(NSPoint(x: xPos, y: yPos))
         }
         
         // 4. 显示窗口 (不激活，这样焦点还在搜索框)
-        previewPanel?.orderFront(nil)
-        currentPreviewId = item.id
+        previewPanel?.orderFrontRegardless()
+        currentPreviewId = itemID
     }
     
     func hidePreview() {
@@ -54,11 +59,11 @@ class PreviewWindowManager: ObservableObject {
         currentPreviewId = nil
     }
     
-    func togglePreview(item: ClipboardItem, mainWindow: NSWindow?) {
-        if currentPreviewId == item.id {
+    func togglePreview(itemID: UUID, mainWindow: NSWindow?) {
+        if currentPreviewId == itemID {
             hidePreview()
         } else {
-            showPreview(item: item, relativeTo: mainWindow)
+            showPreview(itemID: itemID, relativeTo: mainWindow)
         }
     }
     
