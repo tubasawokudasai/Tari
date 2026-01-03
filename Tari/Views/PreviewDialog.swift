@@ -146,11 +146,24 @@ struct PreviewDialog: View {
         isLoading = true
         defer { isLoading = false }
         
-        guard let listItem = ClipboardDataStore.shared.fetchListItemById(id: itemID) else { return }
+        // 重置所有预览状态，确保切换item时不会残留之前的内容
+        self.attributedString = nil
+        self.previewImage = nil
+        self.detectedBackgroundColor = nil
+        
+        guard let listItem = ClipboardDataStore.shared.fetchListItemById(id: itemID) else { 
+            self.content = "未找到内容"
+            self.contentType = .text
+            return 
+        }
+        
         self.content = listItem.text
         self.contentType = listItem.contentType
         
-        guard let archivedData = ClipboardDataStore.shared.fetchArchivedData(id: itemID) else { return }
+        guard let archivedData = ClipboardDataStore.shared.fetchArchivedData(id: itemID) else { 
+            // 如果没有归档数据，确保显示普通文本内容
+            return 
+        }
         
         // 解析代码逻辑保持不变...
         var foundDict: [String: Data]? = nil
