@@ -108,9 +108,8 @@ struct RichTextView: NSViewRepresentable {
         textView.isRichText = true
         textView.textContainerInset = NSSize(width: 10, height: 10)
         
-        // 关键：文本视图必须绘制背景
-        textView.drawsBackground = true
-        textView.backgroundColor = backgroundColor ?? .textBackgroundColor
+        // 关键：文本视图不绘制自己的背景，由外部容器统一管理
+        textView.drawsBackground = false
         
         // 允许 TextView 随容器拉伸
         textView.autoresizingMask = [.width, .height]
@@ -126,7 +125,7 @@ struct RichTextView: NSViewRepresentable {
             if textView.attributedString() != attributedString {
                 textView.textStorage?.setAttributedString(attributedString)
             }
-            textView.backgroundColor = backgroundColor ?? .textBackgroundColor
+            // 不再设置背景色，由外部容器统一管理
         }
     }
 }
@@ -159,26 +158,29 @@ struct RTFHelper {
             if finalBgColor == nil {
                 if isMostlyDarkText {
                     // 如果文字主要是深色，建议使用浅灰色/白色背景，这样语法高亮看得最清楚
-                    finalBgColor = NSColor(white: 0.95, alpha: 0.9)
+                    finalBgColor = NSColor(white: 0.95, alpha: 1.0)
                 } else {
-                    // 如果文字主要是浅色（暗黑模式代码），或者没有颜色，使用深色玻璃背景
-                    finalBgColor = NSColor(red: 0.1, green: 0.1, blue: 0.1, alpha: 0.5)
+                    // 如果文字主要是浅色，也使用浅色背景，确保在任何情况下都有良好的可读性
+                    finalBgColor = NSColor(white: 0.95, alpha: 1.0)
                 }
             }
             
             // 3. 智能调整文字颜色
-            // 只有当我们在“深色背景”下，且遇到“纯黑色”或“默认颜色”时，才将其改为白色
-            // 这样可以保留原本的语法高亮颜色
-            if !isMostlyDarkText { // 在深色背景模式下
-                mutableAttrString.enumerateAttributes(in: NSRange(location: 0, length: length), options: []) { attributes, range, _ in
-                    let currentColor = attributes[.foregroundColor] as? NSColor
-                    
-                    // 如果没有颜色（默认），或者是纯黑色
-                    if currentColor == nil || (currentColor?.isBlackOrVeryDark ?? false) {
-                        mutableAttrString.addAttribute(.foregroundColor, value: NSColor.white.withAlphaComponent(0.9), range: range)
+            // 由于我们使用浅色背景，确保所有文字都有良好的对比度
+            mutableAttrString.enumerateAttributes(in: NSRange(location: 0, length: length), options: []) { attributes, range, _ in
+                let currentColor = attributes[.foregroundColor] as? NSColor
+                
+                // 如果没有颜色（默认），使用黑色
+                if currentColor == nil {
+                    mutableAttrString.addAttribute(.foregroundColor, value: NSColor.black, range: range)
+                } else if !isMostlyDarkText {
+                    // 如果文字主要是浅色，确保在浅色背景上有足够对比度
+                    let brightness = currentColor?.brightnessComponent ?? 0
+                    if brightness > 0.7 { // 如果颜色太浅
+                        mutableAttrString.addAttribute(.foregroundColor, value: NSColor.black, range: range)
                     }
-                    // 如果原本有颜色（比如语法高亮），就保持不动
                 }
+                // 如果原本有颜色且对比度足够，就保持不动
             }
             
             return (mutableAttrString, finalBgColor)
@@ -247,7 +249,7 @@ struct PreviewView: View {
                 .padding(.trailing)
             }
             .frame(height: 40)
-            .background(VisualEffectView(material: .headerView, blendingMode: .withinWindow))
+            .background(VisualEffectView(material: .headerView, blendingMode: .behindWindow))
             
             if let item = item {
                 switch item.contentType {
@@ -275,14 +277,18 @@ struct PreviewView: View {
                     
                 case .text, .fileURL, .unknown:
                     if let attrString = attributedString {
-                        RichTextView(attributedString: attrString, isEditable: false, backgroundColor: detectedBackgroundColor)
+                        RichTextView(attributedString: attrString, isEditable: false, backgroundColor: nil)
+                            .background(
+                                RoundedRectangle(cornerRadius: 8)
+                                    .fill(Color(nsColor: detectedBackgroundColor ?? NSColor(white: 0.95, alpha: 1.0)))
+                            )
                             .padding()
                             .frame(maxWidth: .infinity, maxHeight: .infinity)
                     } else {
                         ScrollView {
                             Text(content)
                                 .font(.system(size: 13, design: .monospaced))
-                                .foregroundColor((detectedBackgroundColor?.isDarkColor ?? false) ? .white : .primary)
+                                .foregroundColor(.primary)
                                 .padding()
                                 .frame(maxWidth: .infinity, alignment: .leading)
                         }
@@ -294,7 +300,11 @@ struct PreviewView: View {
             }
         }
         .frame(minWidth: 600, minHeight: 400)
-        .background(VisualEffectView(material: .contentBackground, blendingMode: .withinWindow))
+        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .background(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(Color(nsColor: .windowBackgroundColor))
+        )
         .task {
             await loadData()
         }

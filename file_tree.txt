@@ -6,12 +6,16 @@
     - AccentColor.colorset/
     - AppIcon.appiconset/
   - Managers/            # 管理器类
+    - ClipboardDataStore.swift
     - ClipboardManager.swift
+    - ImageDownsampler.swift
   - Models/              # 数据模型
     - ClipboardItem.swift
   - TariModel.xcdatamodeld/  # Core Data 模型
     - TariModel.xcdatamodel/
   - Utils/               # 工具类
+    - AppIconProvider.swift
+    - CryptoUtils.swift
     - Formatters.swift
   - Views/               # 视图组件
     - EffectViews.swift
@@ -19,6 +23,7 @@
     - PreviewDialog.swift
   - AppDelegate.swift    # 应用委托
   - ContentView.swift    # 主内容视图
+  - Info.plist
   - Persistence.swift    # 数据持久化
   - PreviewWindowManager.swift  # 预览窗口管理器
   - TariApp.swift    # 应用入口

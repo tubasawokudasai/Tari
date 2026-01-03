@@ -1,10 +1,3 @@
-//
-//  PreviewDialog.swift
-//  Tari
-//
-//  Created by wjb on 2025/12/25.
-//
-
 import SwiftUI
 import AppKit
 
@@ -16,85 +9,150 @@ struct PreviewDialog: View {
     @State private var content: String = "加载中..."
     @State private var attributedString: NSAttributedString?
     @State private var detectedBackgroundColor: NSColor?
-    @State private var previewImage: NSImage? // 用于存储解析后的图片
+    @State private var previewImage: NSImage?
+    @State private var isLoading = true
     
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            // 顶部标题栏 (保持原样)
-            HStack {
-                Text(contentType == .image ? "图片预览" : "文本预览")
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundColor(.white.opacity(0.9))
-                Spacer()
-                Button(action: onClose) {
-                    Image(systemName: "xmark").font(.system(size: 10, weight: .bold))
-                        .foregroundColor(.white.opacity(0.6)).padding(6)
-                        .background(Color.white.opacity(0.1)).clipShape(Circle())
-                }.buttonStyle(.plain)
-            }
-            .padding(12).background(Color.black.opacity(0.2))
+        ZStack(alignment: .topTrailing) {
+            // 1. 全局背景：使用厚的材质感
+            VisualEffectView(material: .hudWindow, blendingMode: .behindWindow)
+                .ignoresSafeArea()
             
-            Divider().background(Color.white.opacity(0.1))
-            
-            // 内容区域
-            Group {
-                if contentType == .image {
-                    if let nsImage = previewImage {
-                        GeometryReader { geo in
-                            Image(nsImage: nsImage)
-                                .resizable()
-                                .aspectRatio(contentMode: .fit)
-                                .frame(width: geo.size.width, height: geo.size.height)
-                        }.frame(height: 300)
-                    } else {
-                        ProgressView().frame(height: 300)
-                    }
-                } else {
-                    if let attributedString = attributedString {
-                        let bgColor = detectedBackgroundColor ?? NSColor(red: 0.1, green: 0.1, blue: 0.1, alpha: 0.5)
-                        RichTextView(attributedString: attributedString, isEditable: false, backgroundColor: bgColor)
-                            .frame(height: 300)
-                    } else {
-                        ScrollView {
-                            Text(content)
-                                .font(.system(size: 13, design: .monospaced))
-                                .foregroundColor(.white.opacity(0.9))
-                                .padding().frame(maxWidth: .infinity, alignment: .leading)
-                                .textSelection(.enabled)
-                        }.frame(height: 300)
-                    }
-                }
+            VStack(spacing: 0) {
+                // 2. 自定义导航头部
+                headerView
+                
+                // 3. 主内容区
+                contentArea
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .background(Color.black.opacity(0.03)) // 微弱的凹陷感
+                
+                // 4. 底部状态栏
+                footerView
             }
             
-            Divider().background(Color.white.opacity(0.1))
-            HStack { Spacer() }.background(Color.black.opacity(0.2))
+            // 右上角关闭按钮（悬浮式，更有设计感）
+            closeButton
         }
-        .frame(width: 450)
-        .background(VisualEffectView(material: .hudWindow, blendingMode: .behindWindow).clipShape(RoundedRectangle(cornerRadius: 12)))
-        .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.white.opacity(0.15), lineWidth: 1))
+        .frame(width: 500, height: 420)
+        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .shadow(color: .black.opacity(0.3), radius: 12, x: 0, y: 6) // 加深一点阴影以提升悬浮感
+        .padding(30)
         .task(id: itemID) {
             await loadPreviewData()
         }
-        .onDisappear {
-            // 释放资源，避免内存泄漏
-            previewImage = nil
-            attributedString = nil
-            detectedBackgroundColor = nil
+    }
+    
+    // MARK: - Subviews
+    
+    private var headerView: some View {
+        HStack {
+            Image(systemName: contentType == .image ? "photo.fill" : "doc.text.fill")
+                .foregroundColor(.secondary)
+            Text(contentType == .image ? "图片预览" : "内容预览")
+                .font(.system(size: 13, weight: .bold))
+                .foregroundColor(.primary.opacity(0.8))
+            Spacer()
+        }
+        .padding(.horizontal, 16)
+        .frame(height: 44)
+    }
+    
+    private var contentArea: some View {
+    Group {
+        if isLoading {
+            ProgressView().controlSize(.small)
+        } else if contentType == .image, let nsImage = previewImage {
+            imagePreviewer(nsImage)
+        } else {
+            textPreviewer
+        }
+    }
+}
+    
+    private func imagePreviewer(_ img: NSImage) -> some View {
+        ScrollView([.horizontal, .vertical], showsIndicators: false) {
+            Image(nsImage: img)
+                .resizable()
+                .aspectRatio(contentMode: .fit)
+                .shadow(color: .black.opacity(0.1), radius: 8, x: 0, y: 4)
+                .padding(20)
         }
     }
     
+    private var textPreviewer: some View {
+    ZStack {
+        // 使用一个带有微弱毛玻璃效果的容器
+        VisualEffectView(material: .selection, blendingMode: .withinWindow)
+            .cornerRadius(12)
+            // 关键：增加一个极细的白色半透明边框，增加高级感
+            .overlay(
+                RoundedRectangle(cornerRadius: 12)
+                    .stroke(Color.white.opacity(0.2), lineWidth: 0.5)
+            )
+
+        if let attrString = attributedString {
+            RichTextView(attributedString: attrString, isEditable: false, backgroundColor: nil)
+                .padding(12) // 内部文字边距
+        } else {
+            ScrollView {
+                Text(content)
+                    .font(.system(.body, design: .monospaced))
+                    .foregroundColor(.primary.opacity(0.85)) // 稍微柔和一点的黑色
+                    .lineSpacing(4) // 增加行间距，提升阅读体验
+                    .padding(18)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .textSelection(.enabled)
+            }
+        }
+    }
+    .padding(.horizontal, 16) // 外部与边缘的间距
+    .padding(.top, 4)
+    .padding(.bottom, 12)
+}
+    
+    private var footerView: some View {
+        HStack {
+            if contentType == .image, let img = previewImage {
+                Text("\(Int(img.size.width)) × \(Int(img.size.height)) px")
+            } else {
+                Text("\(content.count) 字符")
+            }
+            Spacer()
+            Text("按 ESC 退出")
+        }
+        .font(.system(size: 10, weight: .medium))
+        .foregroundColor(.secondary.opacity(0.7))
+        .padding(.horizontal, 16)
+        .frame(height: 28)
+        .background(Color.primary.opacity(0.03))
+    }
+    
+    private var closeButton: some View {
+        Button(action: onClose) {
+            Image(systemName: "xmark")
+                .font(.system(size: 10, weight: .black))
+                .foregroundColor(.secondary)
+                .padding(6)
+                .background(.ultraThinMaterial)
+                .clipShape(Circle())
+        }
+        .buttonStyle(.plain)
+        .padding(12)
+    }
+
+    // MARK: - Logic (保持原有的解析逻辑)
     private func loadPreviewData() async {
-        // 1. 先获取轻量级列表项信息
-        guard let listItem = ClipboardDataStore.shared.fetchListItemById(id: itemID) else { return }
+        isLoading = true
+        defer { isLoading = false }
         
-        // 更新基本信息
+        guard let listItem = ClipboardDataStore.shared.fetchListItemById(id: itemID) else { return }
         self.content = listItem.text
         self.contentType = listItem.contentType
         
-        // 2. 按需加载完整数据
         guard let archivedData = ClipboardDataStore.shared.fetchArchivedData(id: itemID) else { return }
         
-        // 🟢 关键修复：解析 [[String: Data]]
+        // 解析代码逻辑保持不变...
         var foundDict: [String: Data]? = nil
         if let multiItems = try? NSKeyedUnarchiver.unarchiveObject(with: archivedData) as? [[String: Data]] {
             foundDict = multiItems.first
