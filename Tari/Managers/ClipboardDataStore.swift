@@ -39,23 +39,51 @@ final class ClipboardDataStore {
     
 
     
-    // MARK: - 保存新的剪贴板项目
+    // MARK: - 保存新的剪贴板项目，增强数据验证
     @discardableResult
     func saveNewItem(text: String, contentType: ClipboardContentType, additionalData: Data?, appName: String?, fingerprint: String?) -> UUID {
         let newId = UUID()
         let now = Date()
         
+        // 验证基本数据
+        let trimmedText = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedText.isEmpty else {
+            // 如果文本为空，使用默认文本
+            let defaultText = "空内容 \(Date())"
+            context.perform {
+                let entity = ClipboardEntity(context: self.context)
+                entity.id = newId
+                entity.text = defaultText
+                entity.timestamp = now
+                entity.creationTime = now
+                entity.contentType = contentType.rawValue
+                entity.additionalData = additionalData
+                entity.appName = appName
+                entity.fingerprint = fingerprint
+                do {
+                    try PersistenceController.shared.save()
+                } catch {
+                    print("保存Core Data失败: \(error)")
+                }
+            }
+            return newId
+        }
+        
         context.perform {
             let entity = ClipboardEntity(context: self.context)
             entity.id = newId
-            entity.text = text
+            entity.text = trimmedText
             entity.timestamp = now
             entity.creationTime = now
             entity.contentType = contentType.rawValue
             entity.additionalData = additionalData
             entity.appName = appName
             entity.fingerprint = fingerprint
-            try? PersistenceController.shared.save()
+            do {
+                try PersistenceController.shared.save()
+            } catch {
+                print("保存Core Data失败: \(error)")
+            }
         }
         
         return newId
@@ -144,7 +172,11 @@ final class ClipboardDataStore {
             request.predicate = NSPredicate(format: "id == %@", id as CVarArg)
             if let entity = try? self.context.fetch(request).first {
                 entity.timestamp = newTimestamp
-                try? PersistenceController.shared.save()
+                do {
+                    try PersistenceController.shared.save()
+                } catch {
+                    print("保存Core Data失败: \(error)")
+                }
             }
         }
     }
@@ -156,7 +188,11 @@ final class ClipboardDataStore {
             request.predicate = NSPredicate(format: "id == %@", id as CVarArg)
             if let entity = try? self.context.fetch(request).first {
                 self.context.delete(entity)
-                try? PersistenceController.shared.save()
+                do {
+                    try PersistenceController.shared.save()
+                } catch {
+                    print("保存Core Data失败: \(error)")
+                }
             }
         }
     }

@@ -5,7 +5,6 @@ import UniformTypeIdentifiers
 
 
 struct ContentView: View {
-    @State private var searchText = ""
     @State private var selectedId: UUID?
     @FocusState private var isSearchFocused: Bool
     @ObservedObject var clipboard: ClipboardManager
@@ -20,17 +19,15 @@ struct ContentView: View {
     // ✅ 新增：用于存储 ScrollView 的可见宽度，用来计算触发时机
     @State private var scrollViewWidth: CGFloat = 0
     
+    // ✅ 新增：用于触发相对时间更新的状态变量
+    @State private var lastWakeUpTime: Date = Date()
+    
     // 添加窗口焦点监听
     private let windowDidBecomeKey = NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)
     
+    // 直接使用 clipboard.items，搜索逻辑已移至 ClipboardManager
     var displayItems: [ClipboardListItem] {
-        if searchText.isEmpty {
-            return clipboard.items
-        } else {
-            return clipboard.items.filter { item in
-                item.text.localizedCaseInsensitiveContains(searchText)
-            }
-        }
+        return clipboard.items
     }
     
     
@@ -42,9 +39,11 @@ struct ContentView: View {
                 Image(systemName: "magnifyingglass")
                     .font(.system(size: 11))
                     .foregroundColor(.secondary)
-                TextField("搜索剪贴板...", text: $searchText)
+                TextField("搜索剪贴板...", text: $clipboard.searchText)
                     .focused($isSearchFocused)
-                    .onChange(of: searchText) { _ in clipboard.resetPagination() }
+                    .onChange(of: clipboard.searchText) { newText in 
+                        clipboard.searchItems(text: newText)
+                    }
                     .textFieldStyle(.plain)
                     .font(.system(size: 12))
             }
@@ -82,7 +81,8 @@ struct ContentView: View {
                                     copyAndPaste(item: item)
                                 },
                                 draggedItem: $draggedItem,
-                                clipboard: clipboard
+                                clipboard: clipboard,
+                                lastWakeUpTime: lastWakeUpTime
                             )
                             .id(item.id)
                         }
@@ -120,14 +120,17 @@ struct ContentView: View {
                 
                 // === 核心修复：监听窗口唤醒 ===
                 .onReceive(windowDidBecomeKey) { _ in
+                    // ✅ 更新唤醒时间，触发相对时间重新计算
+                    lastWakeUpTime = Date()
+                    
                     // 只有当 Manager 标记需要重置时，才执行滚动
                     if clipboard.shouldScrollToTop {
                         // 1. 瞬间滚动到顶部
                         proxy.scrollTo("SCROLL_TO_TOP_ANCHOR", anchor: .leading)
                         
                         // 2. 清理搜索状态
-                        if !searchText.isEmpty {
-                            searchText = ""
+                        if !clipboard.searchText.isEmpty {
+                            clipboard.searchItems(text: "")
                         }
                         // ✅ 唤醒后直接设置搜索焦点，方便用户直接搜索
                         isSearchFocused = true
@@ -283,14 +286,17 @@ struct DraggableItemCard: View {
     let onTapDouble: () -> Void
     @Binding var draggedItem: ClipboardListItem?
     @ObservedObject var clipboard: ClipboardManager
+    let lastWakeUpTime: Date
     
     var body: some View {
         ItemCard(
             item: item,
             isSelected: isSelected,
             onTapSelect: onTapSelect,
-            onTapDouble: onTapDouble
+            onTapDouble: onTapDouble,
+            lastWakeUpTime: lastWakeUpTime
         )
+        .id("\(item.id)-\(lastWakeUpTime.timeIntervalSince1970)")
         // ✅ 核心修复：onDrag 和 dropDestination 必须在同一个 View 层级上
         .onDrag {
             // 1. 立即锁定拖拽对象

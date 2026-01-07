@@ -14,6 +14,9 @@ class ClipboardManager: ObservableObject {
     @Published var hasMoreData = true
     @Published var isLoading = false
     
+    // 搜索相关属性
+    @Published var searchText = ""
+    
     // 标记是否需要滚动回顶部
     @Published var shouldScrollToTop = false
     
@@ -28,14 +31,18 @@ class ClipboardManager: ObservableObject {
     private let dataStore = ClipboardDataStore.shared
 
     init() {
+        // 先加载初始数据，确保数据准备就绪
         loadMoreItems()
         
-        // 启动剪贴板监听
-        timer = Timer.publish(every: 0.5, on: .main, in: .common)
-            .autoconnect()
-            .sink { [weak self] _ in
-                self?.checkClipboard()
-            }
+        // 延迟启动剪贴板监听，确保数据加载完成
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+            // 启动剪贴板监听
+            self.timer = Timer.publish(every: 0.5, on: .main, in: .common)
+                .autoconnect()
+                .sink { [weak self] _ in
+                    self?.checkClipboard()
+                }
+        }
     }
 
     // MARK: - 文本标准化函数
@@ -236,6 +243,12 @@ class ClipboardManager: ObservableObject {
         items.removeAll()
         loadMoreItems()
     }
+    
+    // 搜索功能：设置搜索文本并重置分页
+    func searchItems(text: String) {
+        searchText = text
+        resetPagination()
+    }
 
     // MARK: - 内部业务逻辑
     
@@ -320,6 +333,12 @@ class ClipboardManager: ObservableObject {
         request.fetchOffset = currentPage * pageSize
         request.sortDescriptors = [NSSortDescriptor(key: "timestamp", ascending: false)]
         
+        // 3. 添加搜索条件
+        if !searchText.isEmpty {
+            let searchPredicate = NSPredicate(format: "text CONTAINS[cd] %@", searchText)
+            request.predicate = searchPredicate
+        }
+        
         // 只获取需要的轻量级字段，减少内存占用
         request.propertiesToFetch = [
             "id", "text", "timestamp", "creationTime", "contentType", "appName"
@@ -330,19 +349,21 @@ class ClipboardManager: ObservableObject {
             do {
                 let results = (try self.context.fetch(request)) ?? []
                 
-                // 4. 转换为轻量级的 ClipboardListItem
+                // 4. 转换为轻量级的 ClipboardListItem，增强数据验证
                 let newItems = results.compactMap { dict -> ClipboardListItem? in
                     guard
                         let id = dict["id"] as? UUID,
                         let text = dict["text"] as? String,
-                        let ts = dict["timestamp"] as? Date
+                        !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                        let ts = dict["timestamp"] as? Date,
+                        ts > Date(timeIntervalSince1970: 1000000) // 确保时间戳不是默认值
                     else { return nil }
                     
                     return ClipboardListItem(
                         id: id,
                         text: text,
                         timestamp: ts,
-                        creationTime: dict["creationTime"] as? Date ?? ts,
+                        creationTime: (dict["creationTime"] as? Date) ?? ts,
                         contentType: ClipboardContentType(rawValue: dict["contentType"] as? String ?? "") ?? .text,
                         appName: dict["appName"] as? String
                     )
@@ -376,14 +397,34 @@ class ClipboardManager: ObservableObject {
 
     // MARK: - 操作剪贴板项目
     func moveItemToTop(id: UUID) {
-        guard let index = items.firstIndex(where: { $0.id == id }) else { return }
-        let item = items.remove(at: index)
         let newTimestamp = Date()
-        let updatedItem = ClipboardListItem(id: item.id, text: item.text, timestamp: newTimestamp, creationTime: item.creationTime, contentType: item.contentType, appName: item.appName)
-        items.insert(updatedItem, at: 0)
         
-        // 使用 ClipboardDataStore 更新 Core Data
-        dataStore.updateItemTimestamp(id: id, newTimestamp: newTimestamp)
+        // 始终从Core Data获取最新数据，避免使用可能损坏的内存数据
+        if let freshItem = dataStore.fetchListItemById(id: id) {
+            // 更新内存数组
+            DispatchQueue.main.async {
+                // 移除旧版本（如果存在）
+                if let index = self.items.firstIndex(where: { $0.id == id }) {
+                    self.items.remove(at: index)
+                }
+                
+                // 创建更新后的项目
+                let updatedItem = ClipboardListItem(
+                    id: freshItem.id,
+                    text: freshItem.text,
+                    timestamp: newTimestamp,
+                    creationTime: freshItem.creationTime,
+                    contentType: freshItem.contentType,
+                    appName: freshItem.appName
+                )
+                
+                // 添加到顶部
+                self.items.insert(updatedItem, at: 0)
+            }
+            
+            // 更新Core Data
+            dataStore.updateItemTimestamp(id: id, newTimestamp: newTimestamp)
+        }
     }
     
     func deleteItem(id: UUID) {

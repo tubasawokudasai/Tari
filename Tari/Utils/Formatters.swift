@@ -21,8 +21,7 @@ struct Formatters {
         return formatter
     }()
 
-    static func formatRelativeTime(_ date: Date) -> String {
-        let now = Date()
+    static func formatRelativeTime(_ date: Date, now: Date = Date()) -> String {
         let interval = now.timeIntervalSince(date)
         
         // 1. 刚刚（小于1分钟）
@@ -39,17 +38,17 @@ struct Formatters {
             let relativeFormatter = RelativeDateTimeFormatter()
             relativeFormatter.unitsStyle = .full
             relativeFormatter.locale = Locale(identifier: "zh_CN")
-            // 对于今天的时间，RelativeDateTimeFormatter 会返回“X分钟前”或“X小时前”
+            // 对于今天的时间，RelativeDateTimeFormatter 会返回"X分钟前"或"X小时前"
             return relativeFormatter.localizedString(for: date, relativeTo: now)
         }
         
         // 检查是否是昨天
         if calendar.isDateInYesterday(date) {
-            // 如果是昨天，显示“昨天 HH:mm”
+            // 如果是昨天，显示"昨天 HH:mm"
             return "昨天 \(Formatters.hourMinuteFormatter.string(from: date))"
         }
         
-        // 超过昨天，显示“MM-dd HH:mm”
+        // 超过昨天，显示"MM-dd HH:mm"
         // 注意：这里我们不再需要 RelativeDateTimeFormatter，而是直接用 DateFormatter 来处理
         return Formatters.monthDayHourMinuteFormatter.string(from: date)
     }

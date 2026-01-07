@@ -26,6 +26,7 @@ struct ItemCard: View, Equatable {
     let isSelected: Bool
     let onTapSelect: () -> Void
     let onTapDouble: () -> Void
+    let lastWakeUpTime: Date
     
     @State private var tempImage: NSImage?
     @State private var tempAppIcon: NSImage?
@@ -34,7 +35,7 @@ struct ItemCard: View, Equatable {
     private let dataStore = ClipboardDataStore.shared
     
     static func == (lhs: ItemCard, rhs: ItemCard) -> Bool {
-        return lhs.item.id == rhs.item.id && lhs.isSelected == rhs.isSelected
+        return lhs.item.id == rhs.item.id && lhs.isSelected == rhs.isSelected && lhs.lastWakeUpTime == rhs.lastWakeUpTime
     }
 
     // MARK: - 逻辑处理 (修复 URL 报错)
@@ -62,6 +63,10 @@ struct ItemCard: View, Equatable {
         default: return "未知"
         }
     }
+    
+    private var relativeTimeString: String {
+        Formatters.formatRelativeTime(item.creationTime, now: lastWakeUpTime)
+    }
 
     // MARK: - Header View
     private var headerView: some View {
@@ -70,7 +75,7 @@ struct ItemCard: View, Equatable {
             VStack(alignment: .leading, spacing: 2) {
                 Text(contentTypeTitle)
                     .font(.system(size: 14, weight: .bold))
-                Text(Formatters.formatRelativeTime(item.creationTime))
+                Text(relativeTimeString)
                     .font(.system(size: 10))
                     .opacity(0.8)
             }
@@ -167,6 +172,7 @@ struct ItemCard: View, Equatable {
         .shadow(color: Color.black.opacity(0.05), radius: 5, y: 2)
         .gesture(TapGesture(count: 2).onEnded { onTapDouble() })
         .simultaneousGesture(TapGesture(count: 1).onEnded { onTapSelect() })
+        .id(lastWakeUpTime.timeIntervalSince1970)
         .task(id: item.id) { await loadPreviewData() }
     }
     
