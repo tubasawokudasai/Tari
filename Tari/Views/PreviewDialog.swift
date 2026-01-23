@@ -11,35 +11,43 @@ struct PreviewDialog: View {
     @State private var detectedBackgroundColor: NSColor?
     @State private var previewImage: NSImage?
     @State private var isLoading = true
+
+    // 添加用于图片缩放和平移的状态变量
+    @State private var zoomScale: CGFloat = 1.0
+    @State private var currentMagnification: CGFloat = 1.0
     
+    @State private var imageOffset: CGSize = .zero
+    @State private var currentOffset: CGSize = .zero
+    
+    // 用于确保ScrollView知道它内部内容的ID，以便scrollTo
+    private let imageContentID = "imageContent"
+
     var body: some View {
         ZStack(alignment: .topTrailing) {
-            // 1. 全局背景：使用厚的材质感
             VisualEffectView(material: .hudWindow, blendingMode: .behindWindow)
                 .ignoresSafeArea()
             
             VStack(spacing: 0) {
-                // 2. 自定义导航头部
                 headerView
                 
-                // 3. 主内容区
                 contentArea
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .background(Color.black.opacity(0.03)) // 微弱的凹陷感
+                    .background(Color.black.opacity(0.03))
                 
-                // 4. 底部状态栏
                 footerView
             }
             
-            // 右上角关闭按钮（悬浮式，更有设计感）
             closeButton
         }
         .frame(width: 500, height: 420)
         .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-        .shadow(color: .black.opacity(0.3), radius: 12, x: 0, y: 6) // 加深一点阴影以提升悬浮感
+        .shadow(color: .black.opacity(0.3), radius: 12, x: 0, y: 6)
         .padding(30)
         .task(id: itemID) {
             await loadPreviewData()
+        }
+        .onChange(of: itemID) { _ in
+            resetImagePreviewState()
         }
     }
     
@@ -59,57 +67,139 @@ struct PreviewDialog: View {
     }
     
     private var contentArea: some View {
-    Group {
-        if isLoading {
-            ProgressView().controlSize(.small)
-        } else if contentType == .image, let nsImage = previewImage {
-            imagePreviewer(nsImage)
-        } else {
-            textPreviewer
-        }
-    }
-}
-    
-    private func imagePreviewer(_ img: NSImage) -> some View {
-        ScrollView([.horizontal, .vertical], showsIndicators: false) {
-            Image(nsImage: img)
-                .resizable()
-                .aspectRatio(contentMode: .fit)
-                .shadow(color: .black.opacity(0.1), radius: 8, x: 0, y: 4)
-                .padding(20)
-        }
-    }
-    
-    private var textPreviewer: some View {
-    ZStack {
-        // 使用一个带有微弱毛玻璃效果的容器
-        VisualEffectView(material: .selection, blendingMode: .withinWindow)
-            .cornerRadius(12)
-            // 关键：增加一个极细的白色半透明边框，增加高级感
-            .overlay(
-                RoundedRectangle(cornerRadius: 12)
-                    .stroke(Color.white.opacity(0.2), lineWidth: 0.5)
-            )
-
-        if let attrString = attributedString {
-            RichTextView(attributedString: attrString, isEditable: false, backgroundColor: nil)
-                .padding(12) // 内部文字边距
-        } else {
-            ScrollView {
-                Text(content)
-                    .font(.system(.body, design: .monospaced))
-                    .foregroundColor(.primary.opacity(0.85)) // 稍微柔和一点的黑色
-                    .lineSpacing(4) // 增加行间距，提升阅读体验
-                    .padding(18)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .textSelection(.enabled)
+        Group {
+            if isLoading {
+                ProgressView().controlSize(.small)
+            } else if contentType == .image, let nsImage = previewImage {
+                imagePreviewer(nsImage)
+            } else {
+                textPreviewer
             }
         }
     }
-    .padding(.horizontal, 16) // 外部与边缘的间距
-    .padding(.top, 4)
-    .padding(.bottom, 12)
-}
+    
+    // MARK: - Modified imagePreviewer with Zoom and Pan
+    private func imagePreviewer(_ img: NSImage) -> some View {
+        GeometryReader { outerGeometry in // 获取 ScrollView 的可用尺寸
+            ScrollView([.horizontal, .vertical], showsIndicators: false) {
+                Image(nsImage: img)
+                    .resizable()
+                    .aspectRatio(contentMode: .fit)
+                    .frame(
+                        width: outerGeometry.size.width * zoomScale * currentMagnification,
+                        height: outerGeometry.size.height * zoomScale * currentMagnification
+                    )
+                    .offset(x: imageOffset.width + currentOffset.width, y: imageOffset.height + currentOffset.height)
+                    .id(imageContentID) // 给图片内容一个ID，方便scrollTo
+                    .shadow(color: Color.black.opacity(0.1), radius: 8, x: 0, y: 4)
+                    // *** 关键改动: contentShape 确保手势识别区域 ***
+                    .contentShape(Rectangle()) // 确保即使图片很小，手势识别区域也覆盖了容器
+                    // 动画效果
+                    .animation(.interactiveSpring(response: 0.2, dampingFraction: 0.8), value: zoomScale * currentMagnification)
+                    .animation(.interactiveSpring(response: 0.2, dampingFraction: 0.8), value: imageOffset)
+                    // *** 关键改动: 手势直接附加到 Image 上，并使用 .gesture(...).simultaneousGesture(...) ***
+                    .gesture(
+                        MagnificationGesture() // 捏合缩放手势
+                            .onChanged { value in
+                                self.currentMagnification = value
+                                // 调试输出
+                                print("MagnificationGesture onChanged: value=\(value), currentMagnification=\(self.currentMagnification)")
+                            }
+                            .onEnded { value in
+                                self.zoomScale *= value
+                                self.currentMagnification = 1.0 // 重置手势的瞬时缩放
+                                // 缩放限制
+                                self.zoomScale = max(0.2, self.zoomScale) // 最小缩放0.2倍
+                                self.zoomScale = min(5.0, self.zoomScale) // 最大缩放5.0倍
+                                // 调试输出
+                                print("MagnificationGesture onEnded: value=\(value), zoomScale=\(self.zoomScale)")
+                            }
+                    )
+                    .simultaneousGesture(
+                        DragGesture() // 拖动平移手势
+                            .onChanged { value in
+                                self.currentOffset = value.translation
+                                // 调试输出
+                                print("DragGesture onChanged: translation=\(value.translation)")
+                            }
+                            .onEnded { value in
+                                self.imageOffset = CGSize(width: self.imageOffset.width + value.translation.width,
+                                                          height: self.imageOffset.height + value.translation.height)
+                                self.currentOffset = .zero
+                                // 调试输出
+                                print("DragGesture onEnded: imageOffset=\(self.imageOffset)")
+                            }
+                    )
+                    .simultaneousGesture(
+                        TapGesture(count: 2) // 双击手势用于重置或放大
+                            .onEnded { _ in
+                                withAnimation {
+                                    if zoomScale == 1.0 && imageOffset == .zero { // 如果已经是默认状态，放大到某个固定倍数
+                                        zoomScale = 2.0
+                                        imageOffset = .zero // 确保偏移也归零，放大到中心
+                                    } else { // 否则重置
+                                        resetImagePreviewState()
+                                    }
+                                }
+                                // 调试输出
+                                print("TapGesture (double) onEnded: zoomScale=\(self.zoomScale), imageOffset=\(self.imageOffset)")
+                            }
+                    )
+            } // End of ScrollView
+            // 使用 ScrollViewReader 在双击复位时滚动到内容中心
+            .overlay(
+                ScrollViewReader { proxy in
+                    Color.clear.onChange(of: zoomScale) { _ in
+                        print("Zoom scale changed to \(zoomScale)")
+                        // 当缩放变化或重置时，尝试滚动到内容中心 (需要一定的延迟才能让ScrollView内容尺寸计算完成)
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+                            withAnimation {
+                                proxy.scrollTo(imageContentID, anchor: .center)
+                            }
+                        }
+                    }
+                    .onChange(of: itemID) { _ in // 确保切换图片时也滚动到中心
+                         DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+                            withAnimation {
+                                proxy.scrollTo(imageContentID, anchor: .center)
+                            }
+                        }
+                    }
+                }
+            )
+        } // End of GeometryReader
+        .onAppear(perform: resetImagePreviewState) // 视图出现时重置状态
+    }
+
+
+    private var textPreviewer: some View {
+        ZStack {
+            VisualEffectView(material: .selection, blendingMode: .withinWindow)
+                .cornerRadius(12)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 12)
+                        .stroke(Color.white.opacity(0.2), lineWidth: 0.5)
+                )
+
+            if let attrString = attributedString {
+                RichTextView(attributedString: attrString, isEditable: false, backgroundColor: nil)
+                    .padding(12)
+            } else {
+                ScrollView {
+                    Text(content)
+                        .font(.system(.body, design: .monospaced))
+                        .foregroundColor(.primary.opacity(0.85))
+                        .lineSpacing(4)
+                        .padding(18)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .textSelection(.enabled)
+                }
+            }
+        }
+        .padding(.horizontal, 16)
+        .padding(.top, 4)
+        .padding(.bottom, 12)
+    }
     
     private var footerView: some View {
         HStack {
@@ -119,7 +209,6 @@ struct PreviewDialog: View {
                 Text("\(content.count) 字符")
             }
             Spacer()
-            Text("按 ESC 退出")
         }
         .font(.system(size: 10, weight: .medium))
         .foregroundColor(.secondary.opacity(0.7))
@@ -141,7 +230,7 @@ struct PreviewDialog: View {
         .padding(12)
     }
 
-    // MARK: - Logic (保持原有的解析逻辑)
+    // MARK: - Logic and State Reset
     private func loadPreviewData() async {
         isLoading = true
         defer { isLoading = false }
@@ -150,22 +239,22 @@ struct PreviewDialog: View {
         self.attributedString = nil
         self.previewImage = nil
         self.detectedBackgroundColor = nil
+        resetImagePreviewState() // 在加载新数据前重置图片预览状态
         
-        guard let listItem = ClipboardDataStore.shared.fetchListItemById(id: itemID) else { 
+        guard let listItem = ClipboardDataStore.shared.fetchListItemById(id: itemID) else {
             self.content = "未找到内容"
             self.contentType = .text
-            return 
+            return
         }
         
         self.content = listItem.text
         self.contentType = listItem.contentType
         
-        guard let archivedData = ClipboardDataStore.shared.fetchArchivedData(id: itemID) else { 
+        guard let archivedData = ClipboardDataStore.shared.fetchArchivedData(id: itemID) else {
             // 如果没有归档数据，确保显示普通文本内容
-            return 
+            return
         }
         
-        // 解析代码逻辑保持不变...
         var foundDict: [String: Data]? = nil
         if let multiItems = try? NSKeyedUnarchiver.unarchiveObject(with: archivedData) as? [[String: Data]] {
             foundDict = multiItems.first
@@ -180,7 +269,8 @@ struct PreviewDialog: View {
             for type in imageTypes {
                 if let imageData = dataDict[type], let img = NSImage(data: imageData) {
                     self.previewImage = img
-                    break
+                    // 当图片加载成功后，确保重置图片预览状态
+                    resetImagePreviewState()
                 }
             }
         } else {
@@ -190,5 +280,23 @@ struct PreviewDialog: View {
                 self.detectedBackgroundColor = result.1
             }
         }
+    }
+    
+    private func resetImagePreviewState() {
+        zoomScale = 1.0
+        currentMagnification = 1.0
+        imageOffset = .zero
+        currentOffset = .zero
+    }
+}
+
+// 扩展 CGSize 以支持加法运算
+extension CGSize: Equatable {
+    public static func == (lhs: CGSize, rhs: CGSize) -> Bool {
+        return lhs.width == rhs.width && lhs.height == rhs.height
+    }
+
+    public static func + (lhs: CGSize, rhs: CGSize) -> CGSize {
+        return CGSize(width: lhs.width + rhs.width, height: lhs.height + rhs.height)
     }
 }
