@@ -134,56 +134,70 @@ struct RichTextView: NSViewRepresentable {
 // MARK: - 改进后的 RTF Helper
 struct RTFHelper {
     static func parseAsync(data: Data) async -> (NSAttributedString?, NSColor?) {
-        return await Task.detached(priority: .userInitiated) {
-            var docAttributes: NSDictionary? = nil
-            guard let attrString = try? NSAttributedString(
-                data: data,
-                options: [.documentType: NSAttributedString.DocumentType.rtf],
-                documentAttributes: &docAttributes
-            ) else {
-                return (nil, nil)
-            }
-            
-            let mutableAttrString = NSMutableAttributedString(attributedString: attrString)
-            let length = mutableAttrString.length
-            
-            // 1. 分析文本主要亮度，决定是否需要切换背景色
-            // 如果大部分文字都是深色的（例如来自 Xcode 浅色模式），我们需要给它一个浅色背景
-            let isMostlyDarkText = attrString.isTextMostlyDark()
-            
-            // 2. 决定最终的背景色
-            // 如果原本 RTF 带背景色（例如网页复制），优先用原本的
-            var finalBgColor: NSColor? = docAttributes?[NSAttributedString.DocumentAttributeKey.backgroundColor] as? NSColor
-            
-            if finalBgColor == nil {
-                if isMostlyDarkText {
-                    // 如果文字主要是深色，建议使用浅灰色/白色背景，这样语法高亮看得最清楚
-                    finalBgColor = NSColor(white: 0.95, alpha: 1.0)
-                } else {
-                    // 如果文字主要是浅色，也使用浅色背景，确保在任何情况下都有良好的可读性
-                    finalBgColor = NSColor(white: 0.95, alpha: 1.0)
+        // 检查取消
+        if Task.isCancelled { return (nil, nil) }
+        
+        return Task.detached(priority: .userInitiated) {
+            return autoreleasepool {
+                var docAttributes: NSDictionary? = nil
+                guard let attrString = try? NSAttributedString(
+                    data: data,
+                    options: [.documentType: NSAttributedString.DocumentType.rtf],
+                    documentAttributes: &docAttributes
+                ) else {
+                    return (nil, nil)
                 }
-            }
-            
-            // 3. 智能调整文字颜色
-            // 由于我们使用浅色背景，确保所有文字都有良好的对比度
-            mutableAttrString.enumerateAttributes(in: NSRange(location: 0, length: length), options: []) { attributes, range, _ in
-                let currentColor = attributes[.foregroundColor] as? NSColor
                 
-                // 如果没有颜色（默认），使用黑色
-                if currentColor == nil {
-                    mutableAttrString.addAttribute(.foregroundColor, value: NSColor.black, range: range)
-                } else if !isMostlyDarkText {
-                    // 如果文字主要是浅色，确保在浅色背景上有足够对比度
-                    let brightness = currentColor?.brightnessComponent ?? 0
-                    if brightness > 0.7 { // 如果颜色太浅
-                        mutableAttrString.addAttribute(.foregroundColor, value: NSColor.black, range: range)
+                // 如果发现 parse 出来的 string 长度极长，进行截断以节省渲染内存
+                let limit = 5000
+                let finalString: NSAttributedString
+                if attrString.length > limit {
+                    finalString = attrString.attributedSubstring(from: NSRange(location: 0, length: limit))
+                } else {
+                    finalString = attrString
+                }
+                
+                let mutableAttrString = NSMutableAttributedString(attributedString: finalString)
+                let length = mutableAttrString.length
+                
+                // 1. 分析文本主要亮度，决定是否需要切换背景色
+                // 如果大部分文字都是深色的（例如来自 Xcode 浅色模式），我们需要给它一个浅色背景
+                let isMostlyDarkText = finalString.isTextMostlyDark()
+                
+                // 2. 决定最终的背景色
+                // 如果原本 RTF 带背景色（例如网页复制），优先用原本的
+                var finalBgColor: NSColor? = docAttributes?[NSAttributedString.DocumentAttributeKey.backgroundColor] as? NSColor
+                
+                if finalBgColor == nil {
+                    if isMostlyDarkText {
+                        // 如果文字主要是深色，建议使用浅灰色/白色背景，这样语法高亮看得最清楚
+                        finalBgColor = NSColor(white: 0.95, alpha: 1.0)
+                    } else {
+                        // 如果文字主要是浅色，也使用浅色背景，确保在任何情况下都有良好的可读性
+                        finalBgColor = NSColor(white: 0.95, alpha: 1.0)
                     }
                 }
-                // 如果原本有颜色且对比度足够，就保持不动
+                
+                // 3. 智能调整文字颜色
+                // 由于我们使用浅色背景，确保所有文字都有良好的对比度
+                mutableAttrString.enumerateAttributes(in: NSRange(location: 0, length: length), options: []) { attributes, range, _ in
+                    let currentColor = attributes[.foregroundColor] as? NSColor
+                    
+                    // 如果没有颜色（默认），使用黑色
+                    if currentColor == nil {
+                        mutableAttrString.addAttribute(.foregroundColor, value: NSColor.black, range: range)
+                    } else if !isMostlyDarkText {
+                        // 如果文字主要是浅色，确保在浅色背景上有足够对比度
+                        let brightness = currentColor?.brightnessComponent ?? 0
+                        if brightness > 0.7 { // 如果颜色太浅
+                            mutableAttrString.addAttribute(.foregroundColor, value: NSColor.black, range: range)
+                        }
+                    }
+                    // 如果原本有颜色且对比度足够，就保持不动
+                }
+                
+                return (mutableAttrString, finalBgColor)
             }
-            
-            return (mutableAttrString, finalBgColor)
         }.value
     }
 }

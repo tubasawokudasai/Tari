@@ -10,12 +10,30 @@ final class ClipboardDataStore {
     // 私有初始化器确保单例
     private init() {}
     
-    // MARK: - 按需加载完整数据
+    // MARK: - 按需加载完整数据 (内存优化版)
     func fetchArchivedData(id: UUID) -> Data? {
-        let request: NSFetchRequest<ClipboardEntity> = ClipboardEntity.fetchRequest()
-        request.predicate = NSPredicate(format: "id == %@", id as CVarArg)
-        request.fetchLimit = 1
-        return try? context.fetch(request).first?.additionalData
+        // 1. 创建一个临时的后台上下文，不与主线程 viewContext 共享缓存
+        let bgContext = PersistenceController.shared.container.newBackgroundContext()
+        
+        var resultData: Data?
+        
+        // 2. 在该上下文中同步执行查询
+        bgContext.performAndWait {
+            let request: NSFetchRequest<ClipboardEntity> = ClipboardEntity.fetchRequest()
+            request.predicate = NSPredicate(format: "id == %@", id as CVarArg)
+            request.fetchLimit = 1
+            
+            // 3. 设置属性只读，不做更改跟踪 (微小的性能提升)
+            bgContext.mergePolicy = NSMergeByPropertyObjectTrumpMergePolicy
+            
+            if let entity = try? bgContext.fetch(request).first {
+                // 4. 拷贝数据。由于 Data 是结构体 (Value Type)，这里会发生 Copy-on-Write 的引用传递，
+                // 但一旦离开闭包，bgContext 被销毁，Core Data 底层的 Row Cache 就会被释放。
+                resultData = entity.additionalData
+            }
+        }
+        
+        return resultData
     }
     
     // MARK: - 检查指纹是否存在
@@ -62,6 +80,8 @@ final class ClipboardDataStore {
                 entity.fingerprint = fingerprint
                 do {
                     try PersistenceController.shared.save()
+                    // 🔴 新增：保存成功后，立即将对象转为 Fault，释放内存中的数据
+                    self.context.refresh(entity, mergeChanges: false)
                 } catch {
                     print("保存Core Data失败: \(error)")
                 }
@@ -81,6 +101,8 @@ final class ClipboardDataStore {
             entity.fingerprint = fingerprint
             do {
                 try PersistenceController.shared.save()
+                // 🔴 新增：保存成功后，立即将对象转为 Fault，释放内存中的数据
+                self.context.refresh(entity, mergeChanges: false)
             } catch {
                 print("保存Core Data失败: \(error)")
             }
@@ -209,6 +231,28 @@ final class ClipboardDataStore {
                 try PersistenceController.shared.save()
             } catch {
                 print("清空Core Data失败: \(error)")
+            }
+        }
+    }
+    
+    // MARK: - 删除一周前的历史记录
+    func deleteOldItems() {
+        context.perform {
+            // 计算一周前的日期
+            let oneWeekAgo = Calendar.current.date(byAdding: .day, value: -7, to: Date())!
+            
+            // 创建删除请求
+            let request: NSFetchRequest<ClipboardEntity> = ClipboardEntity.fetchRequest()
+            request.predicate = NSPredicate(format: "timestamp < %@", oneWeekAgo as CVarArg)
+            
+            do {
+                let entities = try self.context.fetch(request)
+                for entity in entities {
+                    self.context.delete(entity)
+                }
+                try PersistenceController.shared.save()
+            } catch {
+                print("删除旧记录失败: \(error)")
             }
         }
     }

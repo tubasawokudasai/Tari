@@ -8,7 +8,11 @@ import Accelerate
 class IconColorCache {
     static let shared = IconColorCache()
     private let cache = NSCache<NSData, NSColor>()
-    private init() { cache.countLimit = 200 }
+    
+    private init() {
+        cache.countLimit = 200
+        cache.totalCostLimit = 50 * 1024 * 1024 // 🔴 限制缓存总大小为 50MB
+    }
     
     func color(for data: Data) -> Color? {
         if let nsColor = cache.object(forKey: data as NSData) { return Color(nsColor: nsColor) }
@@ -17,7 +21,8 @@ class IconColorCache {
     
     func save(_ color: Color, for data: Data) {
         let nsColor = NSColor(color)
-        cache.setObject(nsColor, forKey: data as NSData)
+        // cost 可以粗略估算为 data.count
+        cache.setObject(nsColor, forKey: data as NSData, cost: data.count)
     }
 }
 
@@ -177,6 +182,9 @@ struct ItemCard: View, Equatable {
     }
     
     private func loadPreviewData() async {
+        // 检查取消
+        if Task.isCancelled { return }
+        
         if let appIcon = await AppIconProvider.shared.icon(for: item.appName) {
             tempAppIcon = appIcon
             if let dominantColor = appIcon.dominantColor() {
@@ -184,29 +192,38 @@ struct ItemCard: View, Equatable {
             }
         }
         
-        if item.contentType == .image, let archivedData = dataStore.fetchArchivedData(id: item.id) {
-            // 解析归档的图片数据
-            var foundDict: [String: Data]? = nil
-            do {
-                // 支持新格式 [[String: Data]]
-                if let newFormat = try NSKeyedUnarchiver.unarchivedObject(ofClasses: [NSArray.self, NSDictionary.self, NSString.self, NSData.self], from: archivedData) as? [[String: Data]] {
-                    foundDict = newFormat.first
-                }
-                // 支持旧格式 [String: Data]
-                else if let oldFormat = try NSKeyedUnarchiver.unarchivedObject(ofClasses: [NSDictionary.self, NSString.self, NSData.self], from: archivedData) as? [String: Data] {
-                    foundDict = oldFormat
-                }
-            } catch {
-                print("解析剪贴板数据失败: \(error)")
-            }
-            
-            // 提取实际图片数据
-            if let dataDict = foundDict {
-                // 尝试获取PNG或TIFF格式的图片数据
-                if let pngData = dataDict[NSPasteboard.PasteboardType.png.rawValue] {
-                    tempImage = ImageDownsampler.downsample(imageData: pngData, to: CGSize(width: 240, height: 180))
-                } else if let tiffData = dataDict[NSPasteboard.PasteboardType.tiff.rawValue] {
-                    tempImage = ImageDownsampler.downsample(imageData: tiffData, to: CGSize(width: 240, height: 180))
+        // 2. 核心优化：图片处理
+        if item.contentType == .image {
+            // 使用 autoreleasepool 确保每次循环或大对象处理完立即释放内存
+            autoreleasepool {
+                guard let archivedData = dataStore.fetchArchivedData(id: item.id) else { return }
+                
+                var foundDict: [String: Data]? = nil
+                // ... (原有的解档逻辑，保持不变) ...
+                do {
+                    if let newFormat = try NSKeyedUnarchiver.unarchivedObject(ofClasses: [NSArray.self, NSDictionary.self, NSString.self, NSData.self], from: archivedData) as? [[String: Data]] {
+                        foundDict = newFormat.first
+                    } else if let oldFormat = try NSKeyedUnarchiver.unarchivedObject(ofClasses: [NSDictionary.self, NSString.self, NSData.self], from: archivedData) as? [String: Data] {
+                        foundDict = oldFormat
+                    }
+                } catch { return }
+                
+                guard let dataDict = foundDict else { return }
+                
+                // 优先查找数据，找到后立即处理，不持有 dataDict 过久
+                var targetData: Data?
+                if let png = dataDict[NSPasteboard.PasteboardType.png.rawValue] { targetData = png }
+                else if let tiff = dataDict[NSPasteboard.PasteboardType.tiff.rawValue] { targetData = tiff }
+                else if let jpeg = dataDict["public.jpeg"] { targetData = jpeg }
+                
+                if let imageData = targetData {
+                    // 🔴 重点：使用 CGImageSource 生成缩略图，而不是创建完整 NSImage
+                    let thumbnail = createThumbnail(from: imageData, maxPixelSize: 240) // 240 是你的显示尺寸
+                    
+                    // 回到主线程更新 UI
+                    DispatchQueue.main.async {
+                        self.tempImage = thumbnail
+                    }
                 }
             }
         }
@@ -248,4 +265,18 @@ extension NSImage {
         if count == 0 { return NSColor.systemBlue }
         return NSColor(red: r/count/255, green: g/count/255, blue: b/count/255, alpha: 1.0)
     }
+}
+
+private func createThumbnail(from data: Data, maxPixelSize: Int) -> NSImage? {
+    let options = [
+        kCGImageSourceCreateThumbnailWithTransform: true,
+        kCGImageSourceCreateThumbnailFromImageAlways: true,
+        kCGImageSourceThumbnailMaxPixelSize: maxPixelSize
+    ] as CFDictionary
+    
+    guard let source = CGImageSourceCreateWithData(data as CFData, nil),
+          let cgImage = CGImageSourceCreateThumbnailAtIndex(source, 0, options) else {
+        return nil
+    }
+    return NSImage(cgImage: cgImage, size: NSSize(width: CGFloat(maxPixelSize), height: CGFloat(maxPixelSize)))
 }
