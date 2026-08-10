@@ -229,13 +229,7 @@ class ClipboardManager: ObservableObject {
         }
     }
 
-    // 修复：moveItem (拖拽排序支持)
-    func moveItem(from source: Int, to destination: Int) {
-        guard items.indices.contains(source), items.indices.contains(destination) else { return }
-        
-        let item = items.remove(at: source)
-        items.insert(item, at: destination)
-    }
+
 
     func resetPagination() {
         currentPage = 0

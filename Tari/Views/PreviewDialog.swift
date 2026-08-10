@@ -62,9 +62,9 @@ struct PreviewDialog: View {
     
     private var headerTitle: String {
         switch contentType {
-        case .image: return "图片预览"
-        case .fileURL: return isDirectory ? "文件夹预览" : "文件预览"
-        default: return "内容预览"
+        case .image: return "图片"
+        case .fileURL: return isDirectory ? "文件夹" : "文件"
+        default: return "文本"
         }
     }
 

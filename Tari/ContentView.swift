@@ -13,8 +13,7 @@ struct ContentView: View {
         self.clipboard = clipboard
     }
     
-    // 拖拽排序相关状态
-    @State private var draggedItem: ClipboardListItem?
+    // 拖拽排序已移除
     
     // ✅ 新增：用于存储 ScrollView 的可见宽度，用来计算触发时机
     @State private var scrollViewWidth: CGFloat = 0
@@ -81,7 +80,6 @@ struct ContentView: View {
                                     selectedId = item.id
                                     copyAndPaste(item: item)
                                 },
-                                draggedItem: $draggedItem,
                                 clipboard: clipboard,
                                 lastWakeUpTime: lastWakeUpTime,
                                 scrollViewWidth: scrollViewWidth
@@ -294,7 +292,6 @@ struct DraggableItemCard: View {
     let isSelected: Bool
     let onTapSelect: () -> Void
     let onTapDouble: () -> Void
-    @Binding var draggedItem: ClipboardListItem?
     @ObservedObject var clipboard: ClipboardManager
     let lastWakeUpTime: Date
     let scrollViewWidth: CGFloat
@@ -332,47 +329,32 @@ struct DraggableItemCard: View {
                     }
             }
         )
-        // ✅ 核心修复：onDrag 和 dropDestination 必须在同一个 View 层级上
         .onDrag {
-            // 1. 立即锁定拖拽对象
-            self.draggedItem = item
-            // 2. 只传递id而不是完整数据
             let provider = NSItemProvider()
-            provider.registerObject(item.id.uuidString as NSString, visibility: .ownProcess)
-            return provider
-        }
-        .dropDestination(for: String.self) { items, location in
-            // 当释放鼠标时，也执行排序逻辑
-            if let dragged = self.draggedItem, dragged.id != item.id {
-                if let sourceIndex = clipboard.items.firstIndex(where: { $0.id == dragged.id }),
-                   let targetIndex = clipboard.items.firstIndex(where: { $0.id == item.id }) {
-                    
-                    if sourceIndex != targetIndex {
-                        withAnimation(.spring()) {
-                            clipboard.moveItem(from: sourceIndex, to: targetIndex)
+            
+            // 从 Core Data 加载实际数据供外部应用使用
+            if let archivedData = ClipboardDataStore.shared.fetchArchivedData(id: item.id) {
+                var allItemsData: [[String: Data]] = []
+                if let newFormat = try? NSKeyedUnarchiver.unarchivedObject(ofClasses: [NSArray.self, NSDictionary.self, NSString.self, NSData.self], from: archivedData) as? [[String: Data]] {
+                    allItemsData = newFormat
+                } else if let oldFormat = try? NSKeyedUnarchiver.unarchivedObject(ofClasses: [NSDictionary.self, NSString.self, NSData.self], from: archivedData) as? [String: Data] {
+                    allItemsData = [oldFormat]
+                }
+                
+                if let firstItem = allItemsData.first {
+                    for (typeRaw, data) in firstItem {
+                        if typeRaw == "org.nspasteboard.source" { continue }
+                        provider.registerDataRepresentation(forTypeIdentifier: typeRaw, visibility: .all) { completion in
+                            completion(data, nil)
+                            return nil
                         }
                     }
                 }
+            } else {
+                provider.registerObject(item.text as NSString, visibility: .all)
             }
-            self.draggedItem = nil
-            return true
-        } isTargeted: { isTargeted in
-            // 悬停时也继续处理，提供更流畅的体验
-            handleDropTargetChange(isTargeted: isTargeted)
-        }
-    }
-    
-    private func handleDropTargetChange(isTargeted: Bool) {
-        guard isTargeted, let dragged = draggedItem, dragged.id != item.id else { return }
-        
-        if let sourceIndex = clipboard.items.firstIndex(where: { $0.id == dragged.id }),
-           let targetIndex = clipboard.items.firstIndex(where: { $0.id == item.id }) {
             
-            if sourceIndex != targetIndex {
-                withAnimation(.spring()) {
-                    clipboard.moveItem(from: sourceIndex, to: targetIndex)
-                }
-            }
+            return provider
         }
     }
 }
