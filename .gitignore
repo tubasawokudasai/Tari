@@ -33,3 +33,6 @@ tari.log
 *.tmp
 *.temp
 file_tree.txt
+
+# IDE
+.idea/

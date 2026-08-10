@@ -177,9 +177,8 @@ struct ContentView: View {
             if newId != nil {
                 isSearchFocused = false
                 NSApp.keyWindow?.makeFirstResponder(nil)
-                // 如果当前有预览窗口打开，更新预览内容
-                // 如果当前有预览窗口打开，更新预览内容
-                if let currentPreviewId = PreviewWindowManager.shared.currentPreviewId, currentPreviewId != newId {
+                // 如果当前有预览窗口打开，或者刚刚才关闭(0.2秒内)，更新预览内容
+                if PreviewWindowManager.shared.wasRecentlyOpen() {
                     PreviewWindowManager.shared.currentPreviewId = newId
                 }
             } else {
