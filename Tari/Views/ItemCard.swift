@@ -43,16 +43,34 @@ struct ItemCard: View, Equatable {
         return lhs.item.id == rhs.item.id && lhs.isSelected == rhs.isSelected && lhs.lastWakeUpTime == rhs.lastWakeUpTime
     }
 
+    private var fileURLs: [String] {
+        if item.contentType == .fileURL {
+            return item.text.components(separatedBy: "\n").filter { !$0.isEmpty }
+        }
+        return []
+    }
+    
+    private var isMultipleFiles: Bool {
+        return fileURLs.count > 1
+    }
+
     // MARK: - 逻辑处理 (修复 URL 报错)
     private var isDirectory: Bool {
+        if isMultipleFiles { return false } // 多个文件时不特指文件夹
         // 剪贴板路径处理：先尝试从 string 初始化，如果失败则视为普通路径
-        let url = URL(string: item.text) ?? URL(fileURLWithPath: item.text)
+        let path = fileURLs.first ?? item.text
+        let url = URL(string: path) ?? URL(fileURLWithPath: path)
         return url.pathExtension.isEmpty
     }
 
     private var cleanDisplayPath: String {
+        if isMultipleFiles {
+            return "多个文件"
+        }
+        
         // 将 file:///Users/xxx/Downloads 转换为 ~/Downloads
-        let rawPath = URL(string: item.text)?.path ?? item.text
+        let path = fileURLs.first ?? item.text
+        let rawPath = URL(string: path)?.path ?? path
         let userHome = "/Users/\(NSUserName())"
         if rawPath.hasPrefix(userHome) {
             return rawPath.replacingOccurrences(of: userHome, with: "~")
@@ -63,7 +81,11 @@ struct ItemCard: View, Equatable {
     private var contentTypeTitle: String {
         switch item.contentType {
         case .text: return "文本"
-        case .fileURL: return isDirectory ? "文件夹" : "文件"
+        case .fileURL: 
+            if isMultipleFiles {
+                return "\(fileURLs.count) 个文件"
+            }
+            return isDirectory ? "文件夹" : "文件"
         case .image: return "图片"
         default: return "未知"
         }
@@ -112,18 +134,43 @@ struct ItemCard: View, Equatable {
                     .fill(tempThemeColor.opacity(0.08))
                     .frame(height: 120)
                 
-                Image(systemName: isDirectory ? "folder.fill" : "doc.fill")
-                    .font(.system(size: 56))
-                    .foregroundColor(tempThemeColor)
+                if isMultipleFiles {
+                    // 使用叠加的文件图标
+                    ZStack {
+                        Image(systemName: "doc.fill")
+                            .font(.system(size: 56))
+                            .foregroundColor(tempThemeColor.opacity(0.6))
+                            .offset(x: -8, y: -8)
+                        
+                        Image(systemName: "doc.fill")
+                            .font(.system(size: 56))
+                            .foregroundColor(tempThemeColor)
+                            .shadow(color: Color.black.opacity(0.1), radius: 2, x: -2, y: 2)
+                    }
+                } else {
+                    Image(systemName: isDirectory ? "folder.fill" : "doc.fill")
+                        .font(.system(size: 56))
+                        .foregroundColor(tempThemeColor)
+                }
             }
             
-            // 纯路径显示
-            Text(cleanDisplayPath)
-                .font(.system(size: 12, design: .monospaced))
-                .foregroundColor(.primary.opacity(0.7))
-                .lineLimit(3)
-                .multilineTextAlignment(.leading)
-                .padding(.horizontal, 4)
+            // 纯路径显示或多个文件
+            HStack {
+                Text(cleanDisplayPath)
+                    .font(.system(size: 14, design: .default))
+                    .foregroundColor(.primary.opacity(0.7))
+                    .lineLimit(3)
+                    .multilineTextAlignment(.leading)
+                
+                Spacer()
+                
+                if isMultipleFiles {
+                    Text("\(fileURLs.count)")
+                        .font(.system(size: 14, weight: .regular))
+                        .foregroundColor(.primary.opacity(0.5))
+                }
+            }
+            .padding(.horizontal, 4)
             
             Spacer(minLength: 0)
         }

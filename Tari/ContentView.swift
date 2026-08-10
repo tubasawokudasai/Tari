@@ -6,6 +6,7 @@ import UniformTypeIdentifiers
 
 struct ContentView: View {
     @State private var selectedId: UUID?
+    @State private var lastSelectedId: UUID?
     @FocusState private var isSearchFocused: Bool
     @ObservedObject var clipboard: ClipboardManager
     
@@ -24,6 +25,7 @@ struct ContentView: View {
 
     // 添加窗口焦点监听
     private let windowDidBecomeKey = NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)
+    private let windowDidResignKey = NotificationCenter.default.publisher(for: NSWindow.didResignKeyNotification)
     
     // 直接使用 clipboard.items，搜索逻辑已移至 ClipboardManager
     var displayItems: [ClipboardListItem] {
@@ -152,6 +154,16 @@ struct ContentView: View {
                         isSearchFocused = true
                     }
                 }
+                .onReceive(windowDidResignKey) { _ in
+                    lastSelectedId = nil
+                }
+                .onChange(of: selectedId) { newId in
+                    if let id = newId {
+                        withAnimation {
+                            proxy.scrollTo(id, anchor: .center)
+                        }
+                    }
+                }
             }
             
             Spacer(minLength: 30)
@@ -193,13 +205,64 @@ struct ContentView: View {
             copySelectedItem()
             return nil
         case 49: // Space
-            if let id = selectedId {
+            if !isSearchFocused, let id = selectedId {
                 PreviewWindowManager.shared.togglePreview(itemID: id)
+                return nil
             }
-            return nil
+        case 123: // Left arrow
+            if !isSearchFocused {
+                selectPreviousItem()
+                return nil
+            }
+        case 124: // Right arrow
+            if !isSearchFocused {
+                selectNextItem()
+                return nil
+            }
+        case 125: // Down arrow (optional usability enhancement to jump to list)
+            if isSearchFocused {
+                if !clipboard.items.isEmpty {
+                    if let lastId = lastSelectedId, clipboard.items.contains(where: { $0.id == lastId }) {
+                        selectedId = lastId
+                    } else {
+                        selectedId = clipboard.items.first?.id
+                    }
+                    return nil
+                }
+            }
+        case 126: // Up arrow (focus search bar)
+            if !isSearchFocused {
+                lastSelectedId = selectedId
+                isSearchFocused = true
+                return nil
+            }
         default: break
         }
         return event
+    }
+    
+    private func selectPreviousItem() {
+        let items = clipboard.items
+        guard !items.isEmpty else { return }
+        if let id = selectedId, let index = items.firstIndex(where: { $0.id == id }) {
+            if index > 0 {
+                selectedId = items[index - 1].id
+            }
+        } else {
+            selectedId = items.first?.id
+        }
+    }
+
+    private func selectNextItem() {
+        let items = clipboard.items
+        guard !items.isEmpty else { return }
+        if let id = selectedId, let index = items.firstIndex(where: { $0.id == id }) {
+            if index < items.count - 1 {
+                selectedId = items[index + 1].id
+            }
+        } else {
+            selectedId = items.first?.id
+        }
     }
     
     func copySelectedItem() {

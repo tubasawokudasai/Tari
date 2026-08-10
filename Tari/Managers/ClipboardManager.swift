@@ -68,12 +68,16 @@ class ClipboardManager: ObservableObject {
     // MARK: - 指纹生成函数
     private func makeClipboardFingerprint(allItemsData: [[String: Data]]) -> String {
         // 1️⃣ 先检查是否为文件URL
+        var fileURLs: [String] = []
         for dict in allItemsData {
             for (type, data) in dict {
                 if type == "public.file-url", let fileURL = String(data: data, encoding: .utf8) {
-                    return "file:" + fileURL
+                    fileURLs.append(fileURL)
                 }
             }
+        }
+        if !fileURLs.isEmpty {
+            return "file:" + fileURLs.sorted().joined(separator: "|")
         }
         
         // 2️⃣ 尝试 canonical text
@@ -122,6 +126,7 @@ class ClipboardManager: ObservableObject {
         var hasFile = false
         
         // 3. 遍历每一个 Item
+        var fileUrls: [String] = []
         for item in pbItems {
             var itemDict: [String: Data] = [:]
             
@@ -136,6 +141,9 @@ class ClipboardManager: ObservableObject {
                     hasImage = true
                 } else if type == .fileURL {
                     hasFile = true
+                    if let data = item.data(forType: type), let urlString = String(data: data, encoding: .utf8) {
+                        fileUrls.append(urlString)
+                    }
                 }
             }
             
@@ -153,8 +161,10 @@ class ClipboardManager: ObservableObject {
             }
         } else if hasFile {
             detectedType = .fileURL
-            if displayString.isEmpty {
-                displayString = "文件"
+            if fileUrls.count > 1 {
+                displayString = fileUrls.joined(separator: "\n")
+            } else if displayString.isEmpty {
+                displayString = fileUrls.first ?? "文件"
             }
         }
         
