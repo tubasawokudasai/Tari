@@ -1,5 +1,6 @@
 import SwiftUI
 import AppKit
+import UniformTypeIdentifiers
 
 struct PreviewDialog: View {
     let itemID: UUID
@@ -53,11 +54,27 @@ struct PreviewDialog: View {
     
     // MARK: - Subviews
     
+    private var headerIconName: String {
+        switch contentType {
+        case .image: return "photo.fill"
+        case .fileURL: return isDirectory ? "folder.fill" : "doc.fill"
+        default: return "doc.text.fill"
+        }
+    }
+    
+    private var headerTitle: String {
+        switch contentType {
+        case .image: return "图片预览"
+        case .fileURL: return isDirectory ? "文件夹预览" : "文件预览"
+        default: return "内容预览"
+        }
+    }
+
     private var headerView: some View {
         HStack {
-            Image(systemName: contentType == .image ? "photo.fill" : "doc.text.fill")
+            Image(systemName: headerIconName)
                 .foregroundColor(.secondary)
-            Text(contentType == .image ? "图片预览" : "内容预览")
+            Text(headerTitle)
                 .font(.system(size: 13, weight: .bold))
                 .foregroundColor(.primary.opacity(0.8))
             Spacer()
@@ -72,10 +89,48 @@ struct PreviewDialog: View {
                 ProgressView().controlSize(.small)
             } else if contentType == .image, let nsImage = previewImage {
                 imagePreviewer(nsImage)
+            } else if contentType == .fileURL {
+                filePreviewer
             } else {
                 textPreviewer
             }
         }
+    }
+    
+    private var isDirectory: Bool {
+        let url = URL(string: content) ?? URL(fileURLWithPath: content)
+        return url.pathExtension.isEmpty
+    }
+
+    private var cleanDisplayPath: String {
+        let rawPath = URL(string: content)?.path ?? content
+        let userHome = "/Users/\(NSUserName())"
+        if rawPath.hasPrefix(userHome) {
+            return rawPath.replacingOccurrences(of: userHome, with: "~")
+        }
+        return rawPath
+    }
+    
+    private var filePreviewer: some View {
+        VStack(spacing: 24) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .fill(Color.blue.opacity(0.08))
+                    .frame(width: 160, height: 160)
+                
+                Image(systemName: isDirectory ? "folder.fill" : "doc.fill")
+                    .font(.system(size: 80))
+                    .foregroundColor(.blue)
+            }
+            
+            Text(cleanDisplayPath)
+                .font(.system(.body, design: .monospaced))
+                .foregroundColor(.primary.opacity(0.8))
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, 32)
+                .textSelection(.enabled)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
     
     // MARK: - Modified imagePreviewer with Zoom and Pan
@@ -174,17 +229,25 @@ struct PreviewDialog: View {
 
     private var textPreviewer: some View {
         ZStack {
-            VisualEffectView(material: .selection, blendingMode: .withinWindow)
-                .cornerRadius(12)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 12)
-                        .stroke(Color.white.opacity(0.2), lineWidth: 0.5)
-                )
-
             if let attrString = attributedString {
+                // 对于富文本，使用解析出来的背景色以保证对比度
+                RoundedRectangle(cornerRadius: 12)
+                    .fill(Color(nsColor: detectedBackgroundColor ?? NSColor(white: 0.95, alpha: 1.0)))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 12)
+                            .stroke(Color.white.opacity(0.2), lineWidth: 0.5)
+                    )
+                
                 RichTextView(attributedString: attrString, isEditable: false, backgroundColor: nil)
                     .padding(12)
             } else {
+                VisualEffectView(material: .selection, blendingMode: .withinWindow)
+                    .cornerRadius(12)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 12)
+                            .stroke(Color.white.opacity(0.2), lineWidth: 0.5)
+                    )
+
                 ScrollView {
                     Text(content)
                         .font(.system(.body, design: .monospaced))
@@ -205,6 +268,8 @@ struct PreviewDialog: View {
         HStack {
             if contentType == .image, let img = previewImage {
                 Text("\(Int(img.size.width)) × \(Int(img.size.height)) px")
+            } else if contentType == .fileURL {
+                Text(isDirectory ? "文件夹" : "文件")
             } else {
                 Text("\(content.count) 字符")
             }
@@ -263,6 +328,27 @@ struct PreviewDialog: View {
         }
         
         guard let dataDict = foundDict else { return }
+        
+        // 如果是文件路径，尝试判断是否是图片并直接加载
+        if listItem.contentType == .fileURL {
+            var targetURL: URL?
+            if let fileURLData = dataDict["public.file-url"],
+               let fileURLString = String(data: fileURLData, encoding: .utf8) {
+                targetURL = URL(string: fileURLString)
+            } else {
+                targetURL = URL(string: listItem.text) ?? URL(fileURLWithPath: listItem.text)
+            }
+            
+            if let url = targetURL,
+               let type = UTType(filenameExtension: url.pathExtension), type.conforms(to: .image) {
+                if let img = NSImage(contentsOf: url) {
+                    self.previewImage = img
+                    self.contentType = .image
+                    resetImagePreviewState()
+                    return
+                }
+            }
+        }
         
         if listItem.contentType == .image {
             let imageTypes = [NSPasteboard.PasteboardType.tiff.rawValue, NSPasteboard.PasteboardType.png.rawValue, "public.jpeg"]

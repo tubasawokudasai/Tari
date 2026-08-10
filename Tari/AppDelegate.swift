@@ -34,7 +34,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     func setupStatusBar() {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         if let button = statusItem?.button {
-            button.image = NSImage(systemSymbolName: "doc.on.clipboard", accessibilityDescription: "Tari")
+            button.image = NSImage(named: "StatusIcon")
+            button.image?.isTemplate = true
             button.action = #selector(togglePanel)
         }
         createMenu()
