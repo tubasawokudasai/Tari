@@ -80,7 +80,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         )
         
         panel?.isMovable = false
-        panel?.level = .popUpMenu
+        panel?.level = .statusBar
         panel?.backgroundColor = .clear
         panel?.hasShadow = true
         panel?.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]

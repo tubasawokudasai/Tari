@@ -20,14 +20,14 @@ struct PreviewDialog: View {
     @State private var imageOffset: CGSize = .zero
     @State private var currentOffset: CGSize = .zero
     
+    // 动态调整窗口尺寸
+    @State private var targetSize: CGSize = CGSize(width: 500, height: 420)
+    
     // 用于确保ScrollView知道它内部内容的ID，以便scrollTo
     private let imageContentID = "imageContent"
 
     var body: some View {
         ZStack(alignment: .topTrailing) {
-            VisualEffectView(material: .hudWindow, blendingMode: .behindWindow)
-                .ignoresSafeArea()
-            
             VStack(spacing: 0) {
                 headerView
                 
@@ -40,10 +40,8 @@ struct PreviewDialog: View {
             
             closeButton
         }
-        .frame(width: 500, height: 420)
-        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-        .shadow(color: .black.opacity(0.3), radius: 12, x: 0, y: 6)
-        .padding(30)
+        .frame(width: targetSize.width, height: targetSize.height)
+        .animation(.spring(response: 0.4, dampingFraction: 0.8), value: targetSize)
         .task(id: itemID) {
             await loadPreviewData()
         }
@@ -296,9 +294,64 @@ struct PreviewDialog: View {
     }
 
     // MARK: - Logic and State Reset
+    private func calculateTargetSize() {
+        let maxWidth: CGFloat = 800
+        // 允许更高的预览高度，只要屏幕上方有空间，就充分利用（最高放宽到 850）
+        let maxHeight: CGFloat = min(850, PreviewWindowManager.shared.availableHeight)
+        let minWidth: CGFloat = 360
+        let minHeight: CGFloat = 200
+        
+        var newWidth: CGFloat = 500
+        var newHeight: CGFloat = 420
+        
+        if contentType == .image, let img = previewImage {
+            let headerFooterHeight: CGFloat = 72 // 44 + 28
+            let imgW = img.size.width
+            let imgH = img.size.height
+            
+            if imgW > 0 && imgH > 0 {
+                let imgRatio = imgW / imgH
+                let maxImgWidth = maxWidth
+                let maxImgHeight = maxHeight - headerFooterHeight
+                let maxImgRatio = maxImgWidth / maxImgHeight
+                
+                if imgRatio > maxImgRatio {
+                    newWidth = maxWidth
+                    newHeight = (maxWidth / imgRatio) + headerFooterHeight
+                } else {
+                    newHeight = maxHeight
+                    newWidth = (maxHeight - headerFooterHeight) * imgRatio
+                }
+            }
+        } else if contentType == .fileURL {
+            newWidth = 400
+            newHeight = 300
+        } else {
+            // Text or unknown
+            if content.count > 1000 {
+                newWidth = 700
+                newHeight = 550
+            } else if content.count < 150 {
+                newWidth = 400
+                newHeight = 250
+            } else {
+                newWidth = 500
+                newHeight = 420
+            }
+        }
+        
+        newWidth = max(minWidth, min(newWidth, maxWidth))
+        newHeight = max(minHeight, min(newHeight, maxHeight))
+        
+        self.targetSize = CGSize(width: newWidth, height: newHeight)
+    }
+
     private func loadPreviewData() async {
         isLoading = true
-        defer { isLoading = false }
+        defer { 
+            isLoading = false 
+            calculateTargetSize()
+        }
         
         // 重置所有预览状态，确保切换item时不会残留之前的内容
         self.attributedString = nil

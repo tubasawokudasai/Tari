@@ -160,40 +160,64 @@ struct RTFHelper {
                 let mutableAttrString = NSMutableAttributedString(attributedString: finalString)
                 let length = mutableAttrString.length
                 
-                // 1. 分析文本主要亮度，决定是否需要切换背景色
-                // 如果大部分文字都是深色的（例如来自 Xcode 浅色模式），我们需要给它一个浅色背景
-                let isMostlyDarkText = finalString.isTextMostlyDark()
-                
-                // 2. 决定最终的背景色
-                // 如果原本 RTF 带背景色（例如网页复制），优先用原本的
-                var finalBgColor: NSColor? = docAttributes?[NSAttributedString.DocumentAttributeKey.backgroundColor] as? NSColor
-                
-                if finalBgColor == nil {
-                    if isMostlyDarkText {
-                        // 如果文字主要是深色，建议使用浅灰色/白色背景，这样语法高亮看得最清楚
-                        finalBgColor = NSColor(white: 0.95, alpha: 1.0)
-                    } else {
-                        // 如果文字主要是浅色，也使用浅色背景，确保在任何情况下都有良好的可读性
-                        finalBgColor = NSColor(white: 0.95, alpha: 1.0)
+                // 1. 提取主流背景色 (特别是针对 Terminal，其背景色经常附在每个字符属性上)
+                var bgColorCounts: [String: Int] = [:]
+                var colorDict: [String: NSColor] = [:]
+                mutableAttrString.enumerateAttribute(.backgroundColor, in: NSRange(location: 0, length: length), options: []) { value, range, _ in
+                    if let color = value as? NSColor, let rgb = color.usingColorSpace(.sRGB) {
+                        let hex = String(format: "#%02x%02x%02x", Int(rgb.redComponent * 255), Int(rgb.greenComponent * 255), Int(rgb.blueComponent * 255))
+                        bgColorCounts[hex, default: 0] += range.length
+                        colorDict[hex] = color
                     }
                 }
                 
+                var extractedBgColor: NSColor? = nil
+                if let mostCommon = bgColorCounts.max(by: { $0.value < $1.value }) {
+                    if Double(mostCommon.value) / Double(length) > 0.5 {
+                        extractedBgColor = colorDict[mostCommon.key]
+                        // 移除局部背景色，由外部统一管理背景，避免出现难看的色块
+                        mutableAttrString.removeAttribute(.backgroundColor, range: NSRange(location: 0, length: length))
+                    }
+                }
+                
+                let isMostlyDarkText = finalString.isTextMostlyDark()
+                
+                // 2. 决定最终的背景色
+                var finalBgColor: NSColor? = docAttributes?[NSAttributedString.DocumentAttributeKey.backgroundColor] as? NSColor
+                
+                if finalBgColor == nil {
+                    finalBgColor = extractedBgColor
+                }
+                
+                if finalBgColor == nil {
+                    if isMostlyDarkText {
+                        finalBgColor = NSColor(white: 0.95, alpha: 1.0)
+                    } else {
+                        // 文字是浅色时，背景也必须是深色，否则看不清
+                        finalBgColor = NSColor(white: 0.12, alpha: 1.0)
+                    }
+                }
+                
+                let isBgDark = finalBgColor?.isDarkColor ?? false
+                
                 // 3. 智能调整文字颜色
-                // 由于我们使用浅色背景，确保所有文字都有良好的对比度
                 mutableAttrString.enumerateAttributes(in: NSRange(location: 0, length: length), options: []) { attributes, range, _ in
                     let currentColor = attributes[.foregroundColor] as? NSColor
                     
-                    // 如果没有颜色（默认），使用黑色
                     if currentColor == nil {
-                        mutableAttrString.addAttribute(.foregroundColor, value: NSColor.black, range: range)
-                    } else if !isMostlyDarkText {
-                        // 如果文字主要是浅色，确保在浅色背景上有足够对比度
-                        let brightness = currentColor?.brightnessComponent ?? 0
-                        if brightness > 0.7 { // 如果颜色太浅
+                        mutableAttrString.addAttribute(.foregroundColor, value: isBgDark ? NSColor.white : NSColor.black, range: range)
+                    } else {
+                        // 对于自带颜色的情况，根据背景色调整对比度，而不是一刀切
+                        let brightness = currentColor?.usingColorSpace(.sRGB)?.brightnessComponent ?? (isBgDark ? 1.0 : 0.0)
+                        
+                        if isBgDark && brightness < 0.3 {
+                            // 背景暗，但字也太暗，提高字体亮度
+                            mutableAttrString.addAttribute(.foregroundColor, value: NSColor(white: 0.8, alpha: 1.0), range: range)
+                        } else if !isBgDark && brightness > 0.7 {
+                            // 背景亮，但字也太亮，降低字体亮度
                             mutableAttrString.addAttribute(.foregroundColor, value: NSColor.black, range: range)
                         }
                     }
-                    // 如果原本有颜色且对比度足够，就保持不动
                 }
                 
                 return (mutableAttrString, finalBgColor)

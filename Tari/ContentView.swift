@@ -22,6 +22,7 @@ struct ContentView: View {
     // ✅ 新增：用于触发相对时间更新的状态变量
     @State private var lastWakeUpTime: Date = Date()
     
+
     // 添加窗口焦点监听
     private let windowDidBecomeKey = NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)
     
@@ -61,7 +62,7 @@ struct ContentView: View {
                 // ✅ 1. 定义坐标空间名称
                 ScrollView(.horizontal, showsIndicators: false) {
                     // ✅ 2. 换回 HStack 以支持拖拽排序
-                    HStack(spacing: 12) {
+                    HStack(spacing: 24) {
                         // === 修改点 1：调整锚点宽度 ===
                         // 目标边距 20 - spacing 12 = 8
                         // 这样当 scroll 到这个锚点时，屏幕左边会正好留出 8(锚点) + 12(间距) = 20 的空白
@@ -82,7 +83,8 @@ struct ContentView: View {
                                 },
                                 draggedItem: $draggedItem,
                                 clipboard: clipboard,
-                                lastWakeUpTime: lastWakeUpTime
+                                lastWakeUpTime: lastWakeUpTime,
+                                scrollViewWidth: scrollViewWidth
                             )
                             .id(item.id)
                         }
@@ -98,7 +100,8 @@ struct ContentView: View {
                     // === 修改点 2：只保留垂直和右侧 padding ===
                     // 移除 .horizontal, 20，改为 .vertical 和 .trailing
                     // 左侧 padding 现在由上面的 Color.clear (8px) + spacing (12px) 代替了
-                    .padding(.vertical, 10)
+                    .padding(.top, 10)
+                    .padding(.bottom, 30) // 增加底部间距
                     .padding(.trailing, 20)
                 }
                 .coordinateSpace(name: "SCROLL_SPACE") // ✅ 命名坐标空间
@@ -119,7 +122,13 @@ struct ContentView: View {
                 }
                 
                 // === 核心修复：监听窗口唤醒 ===
-                .onReceive(windowDidBecomeKey) { _ in
+                .onReceive(windowDidBecomeKey) { notification in
+                    // 检查新获得焦点的窗口是否是预览窗口，如果是，则忽略
+                    // 检查新获得焦点的窗口是否是预览窗口，如果是，则忽略
+                    if PreviewWindowManager.shared.currentPreviewId != nil {
+                        return
+                    }
+                    
                     // ✅ 更新唤醒时间，触发相对时间重新计算
                     lastWakeUpTime = Date()
                     
@@ -147,7 +156,7 @@ struct ContentView: View {
                 }
             }
             
-            Spacer(minLength: 5)
+            Spacer(minLength: 30)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(
@@ -159,8 +168,9 @@ struct ContentView: View {
                 isSearchFocused = false
                 NSApp.keyWindow?.makeFirstResponder(nil)
                 // 如果当前有预览窗口打开，更新预览内容
+                // 如果当前有预览窗口打开，更新预览内容
                 if let currentPreviewId = PreviewWindowManager.shared.currentPreviewId, currentPreviewId != newId {
-                    PreviewWindowManager.shared.showPreview(itemID: newId!, relativeTo: NSApp.keyWindow)
+                    PreviewWindowManager.shared.currentPreviewId = newId
                 }
             } else {
                 PreviewWindowManager.shared.hidePreview()
@@ -186,7 +196,7 @@ struct ContentView: View {
             return nil
         case 49: // Space
             if let id = selectedId {
-                PreviewWindowManager.shared.togglePreview(itemID: id, mainWindow: NSApp.keyWindow)
+                PreviewWindowManager.shared.togglePreview(itemID: id)
             }
             return nil
         default: break
@@ -287,6 +297,9 @@ struct DraggableItemCard: View {
     @Binding var draggedItem: ClipboardListItem?
     @ObservedObject var clipboard: ClipboardManager
     let lastWakeUpTime: Date
+    let scrollViewWidth: CGFloat
+    
+    @ObservedObject var previewManager = PreviewWindowManager.shared
     
     var body: some View {
         ItemCard(
@@ -297,6 +310,28 @@ struct DraggableItemCard: View {
             lastWakeUpTime: lastWakeUpTime
         )
         .id("\(item.id)-\(lastWakeUpTime.timeIntervalSince1970)")
+        .popover(isPresented: Binding(
+            get: { previewManager.currentPreviewId == item.id },
+            set: { isVisible in
+                if !isVisible && previewManager.currentPreviewId == item.id {
+                    previewManager.hidePreview()
+                }
+            }
+        ), arrowEdge: .top) {
+            PreviewDialog(itemID: item.id, onClose: { previewManager.hidePreview() })
+        }
+        .background(
+            GeometryReader { geo in
+                Color.clear
+                    .onChange(of: geo.frame(in: .named("SCROLL_SPACE"))) { newRect in
+                        if previewManager.currentPreviewId == item.id {
+                            if newRect.maxX < 0 || newRect.minX > scrollViewWidth {
+                                previewManager.hidePreview()
+                            }
+                        }
+                    }
+            }
+        )
         // ✅ 核心修复：onDrag 和 dropDestination 必须在同一个 View 层级上
         .onDrag {
             // 1. 立即锁定拖拽对象

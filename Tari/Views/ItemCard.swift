@@ -168,8 +168,8 @@ struct ItemCard: View, Equatable {
                 .background(Color(nsColor: .windowBackgroundColor))
             }
         }
-        .frame(width: 260, height: 260)
-        .clipShape(RoundedRectangle(cornerRadius: 12))
+        .frame(width: 260, height: 250)
+        .clipShape(RoundedRectangle(cornerRadius: 20))
         .overlay(
             RoundedRectangle(cornerRadius: 12)
                 .strokeBorder(isSelected ? Color.blue : Color.black.opacity(0.1), lineWidth: isSelected ? 3 : 0.5)
