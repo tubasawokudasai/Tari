@@ -84,15 +84,45 @@ struct PreviewDialog: View {
     }
 
     private var headerView: some View {
-        HStack {
+        HStack(spacing: 8) {
             Image(systemName: headerIconName)
                 .foregroundColor(.secondary)
             Text(headerTitle)
                 .font(.system(size: 13, weight: .bold))
                 .foregroundColor(.primary.opacity(0.8))
+            
             Spacer()
+            
+            if isLink, let url = URL(string: content.trimmingCharacters(in: .whitespacesAndNewlines)) {
+                Button(action: {
+                    NSWorkspace.shared.open(url)
+                }) {
+                    HStack(spacing: 4) {
+                        Text("打开")
+                            .font(.system(size: 12, weight: .medium))
+                        Image(systemName: "arrow.up.right")
+                            .font(.system(size: 11, weight: .semibold))
+                    }
+                    .foregroundColor(.primary.opacity(0.85))
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 5)
+                    .background(
+                        RoundedRectangle(cornerRadius: 8, style: .continuous)
+                            .fill(Color.primary.opacity(0.08))
+                    )
+                }
+                .buttonStyle(.plain)
+                .onHover { isHovered in
+                    if isHovered {
+                        NSCursor.pointingHand.push()
+                    } else {
+                        NSCursor.pop()
+                    }
+                }
+            }
         }
-        .padding(.horizontal, 16)
+        .padding(.leading, 16)
+        .padding(.trailing, 48)
         .frame(height: 44)
     }
     

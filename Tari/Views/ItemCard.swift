@@ -199,20 +199,6 @@ struct ItemCard: View, Equatable {
                             .lineLimit(1)
                     }
                 }
-                .contentShape(Rectangle())
-                .onHover { isHovered in
-                    if isHovered {
-                        NSCursor.pointingHand.push()
-                    } else {
-                        NSCursor.pop()
-                    }
-                }
-                .onTapGesture {
-                    let urlString = item.text.trimmingCharacters(in: .whitespacesAndNewlines)
-                    if let url = URL(string: urlString) {
-                        NSWorkspace.shared.open(url)
-                    }
-                }
                 
                 Spacer(minLength: 0)
             }
