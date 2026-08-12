@@ -290,6 +290,11 @@ struct ContentView: View {
     }
     
     func copyAndPaste(item: ClipboardListItem) {
+        // 0. 检查辅助功能权限，若未开启或失效则不隐藏面板，弹窗引导用户设置
+        guard AccessibilityManager.checkAndRequestPermission() else {
+            return
+        }
+        
         // 1. 先写入剪贴板 (极快)
         clipboard.copyItemToClipboard(id: item.id)
         

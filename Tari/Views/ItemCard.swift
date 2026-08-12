@@ -185,21 +185,40 @@ struct ItemCard: View, Equatable {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             
         case .link:
-            VStack(alignment: .leading, spacing: 4) {
-                Text(item.text.trimmingCharacters(in: .whitespacesAndNewlines))
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundColor(isDark ? Color(hex: "60a5fa") : Color(hex: "2563eb"))
-                    .lineLimit(2)
-                if let host = URL(string: item.text.trimmingCharacters(in: .whitespacesAndNewlines))?.host {
-                    Text(host)
-                        .font(.system(size: 10, design: .monospaced))
-                        .foregroundColor(isDark ? .white.opacity(0.3) : Color(hex: "64748b"))
-                        .lineLimit(1)
+            VStack(alignment: .leading, spacing: 0) {
+                VStack(alignment: .leading, spacing: 4) {
+                    let urlString = item.text.trimmingCharacters(in: .whitespacesAndNewlines)
+                    Text(urlString)
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundColor(isDark ? Color(hex: "60a5fa") : Color(hex: "2563eb"))
+                        .lineLimit(2)
+                    if let host = URL(string: urlString)?.host {
+                        Text(host)
+                            .font(.system(size: 10, design: .monospaced))
+                            .foregroundColor(isDark ? .white.opacity(0.3) : Color(hex: "64748b"))
+                            .lineLimit(1)
+                    }
                 }
+                .contentShape(Rectangle())
+                .onHover { isHovered in
+                    if isHovered {
+                        NSCursor.pointingHand.push()
+                    } else {
+                        NSCursor.pop()
+                    }
+                }
+                .onTapGesture {
+                    let urlString = item.text.trimmingCharacters(in: .whitespacesAndNewlines)
+                    if let url = URL(string: urlString) {
+                        NSWorkspace.shared.open(url)
+                    }
+                }
+                
                 Spacer(minLength: 0)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.top, 8)
+            
             
         case .code:
             Text(item.text.prefix(200))
