@@ -1,6 +1,7 @@
 import SwiftUI
 import AppKit
 import UniformTypeIdentifiers
+import WebKit
 
 struct PreviewDialog: View {
     let itemID: UUID
@@ -52,7 +53,20 @@ struct PreviewDialog: View {
     
     // MARK: - Subviews
     
+    private var isLink: Bool {
+        if contentType == .text {
+            let text = content.trimmingCharacters(in: .whitespacesAndNewlines)
+            if let url = URL(string: text), (url.scheme == "http" || url.scheme == "https"), url.host != nil {
+                if !text.contains(where: { $0.isWhitespace }) {
+                    return true
+                }
+            }
+        }
+        return false
+    }
+
     private var headerIconName: String {
+        if isLink { return "link" }
         switch contentType {
         case .image: return "photo.fill"
         case .fileURL: return isDirectory ? "folder.fill" : "doc.fill"
@@ -61,6 +75,7 @@ struct PreviewDialog: View {
     }
     
     private var headerTitle: String {
+        if isLink { return "网页" }
         switch contentType {
         case .image: return "图片"
         case .fileURL: return isDirectory ? "文件夹" : "文件"
@@ -89,6 +104,8 @@ struct PreviewDialog: View {
                 imagePreviewer(nsImage)
             } else if contentType == .fileURL {
                 filePreviewer
+            } else if isLink {
+                linkPreviewer
             } else {
                 textPreviewer
             }
@@ -107,6 +124,15 @@ struct PreviewDialog: View {
             return rawPath.replacingOccurrences(of: userHome, with: "~")
         }
         return rawPath
+    }
+    
+    @ViewBuilder
+    private var linkPreviewer: some View {
+        if let url = URL(string: content.trimmingCharacters(in: .whitespacesAndNewlines)) {
+            LinkPreviewContainer(url: url)
+        } else {
+            textPreviewer
+        }
     }
     
     private var filePreviewer: some View {
@@ -326,6 +352,9 @@ struct PreviewDialog: View {
         } else if contentType == .fileURL {
             newWidth = 400
             newHeight = 300
+        } else if isLink {
+            newWidth = 800
+            newHeight = 600
         } else {
             // Text or unknown
             if content.count > 1000 {
@@ -434,5 +463,85 @@ struct PreviewDialog: View {
 extension CGSize {
     public static func + (lhs: CGSize, rhs: CGSize) -> CGSize {
         return CGSize(width: lhs.width + rhs.width, height: lhs.height + rhs.height)
+    }
+}
+
+// MARK: - WebView Preview
+struct LinkPreviewContainer: View {
+    let url: URL
+    @State private var isWebLoading: Bool = true
+    
+    var body: some View {
+        ZStack {
+            PreviewWebView(url: url, isLoading: $isWebLoading)
+            
+            if isWebLoading {
+                VStack {
+                    ProgressView()
+                        .controlSize(.regular)
+                    Text("加载中...")
+                        .font(.system(size: 12))
+                        .foregroundColor(.secondary)
+                        .padding(.top, 8)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background(Color(nsColor: .windowBackgroundColor).opacity(0.8))
+            }
+        }
+    }
+}
+
+struct PreviewWebView: NSViewRepresentable {
+    let url: URL
+    @Binding var isLoading: Bool
+    
+    func makeCoordinator() -> Coordinator {
+        Coordinator(self)
+    }
+    
+    func makeNSView(context: Context) -> WKWebView {
+        let config = WKWebViewConfiguration()
+        let webView = WKWebView(frame: .zero, configuration: config)
+        webView.navigationDelegate = context.coordinator
+        return webView
+    }
+    
+    func updateNSView(_ webView: WKWebView, context: Context) {
+        if webView.url?.absoluteString != url.absoluteString {
+            let request = URLRequest(url: url)
+            webView.load(request)
+        }
+    }
+    
+    class Coordinator: NSObject, WKNavigationDelegate {
+        var parent: PreviewWebView
+        
+        init(_ parent: PreviewWebView) {
+            self.parent = parent
+        }
+        
+        func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
+            DispatchQueue.main.async {
+                self.parent.isLoading = true
+            }
+        }
+        
+        func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+            DispatchQueue.main.async {
+                self.parent.isLoading = false
+            }
+        }
+        
+        func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
+            DispatchQueue.main.async {
+                self.parent.isLoading = false
+            }
+        }
+        
+        func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
+            DispatchQueue.main.async {
+                self.parent.isLoading = false
+            }
+        }
     }
 }
