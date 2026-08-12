@@ -235,24 +235,69 @@ final class ClipboardDataStore {
         }
     }
     
-    // MARK: - 删除一周前的历史记录
-    func deleteOldItems() {
+    // 记录上一次清理的时间，避免频繁清理引发性能问题
+    private var lastCleanupTime: Date = .distantPast
+    
+    // MARK: - 清理过期记录和超出最大限制的记录
+    func cleanUpOldAndExcessItems() {
+        // 如果距离上次清理还不到 1 天（86400秒），直接跳过
+        let now = Date()
+        guard now.timeIntervalSince(lastCleanupTime) > 86400 else {
+            return
+        }
+        lastCleanupTime = now
+        
         context.perform {
-            // 计算一周前的日期
-            let oneWeekAgo = Calendar.current.date(byAdding: .day, value: -7, to: Date())!
+            let defaults = UserDefaults.standard
             
-            // 创建删除请求
-            let request: NSFetchRequest<ClipboardEntity> = ClipboardEntity.fetchRequest()
-            request.predicate = NSPredicate(format: "timestamp < %@", oneWeekAgo as CVarArg)
+            // 1. 获取设置参数，如果不存在则使用默认值
+            let retentionDays = defaults.object(forKey: "retentionPeriod") as? Int ?? 30
+            let maxCount = defaults.object(forKey: "maxRecordCount") as? Int ?? 1000
             
-            do {
-                let entities = try self.context.fetch(request)
-                for entity in entities {
-                    self.context.delete(entity)
+            // 2. 清理过期数据 (retentionDays == 0 表示永久保存)
+            if retentionDays > 0 {
+                if let expirationDate = Calendar.current.date(byAdding: .day, value: -retentionDays, to: Date()) {
+                    let dateRequest: NSFetchRequest<NSFetchRequestResult> = ClipboardEntity.fetchRequest()
+                    dateRequest.predicate = NSPredicate(format: "timestamp < %@", expirationDate as CVarArg)
+                    let deleteDateRequest = NSBatchDeleteRequest(fetchRequest: dateRequest)
+                    
+                    do {
+                        try self.context.execute(deleteDateRequest)
+                    } catch {
+                        print("删除过期记录失败: \(error)")
+                    }
                 }
-                try PersistenceController.shared.save()
-            } catch {
-                print("删除旧记录失败: \(error)")
+            }
+            
+            // 3. 强制保存，确保接下来的查询是基于最新状态的
+            if self.context.hasChanges {
+                try? self.context.save()
+            }
+            
+            // 4. 清理超出最大数量限制的数据 (maxCount == 0 表示无限制)
+            if maxCount > 0 {
+                let countRequest: NSFetchRequest<ClipboardEntity> = ClipboardEntity.fetchRequest()
+                
+                // 获取当前总数
+                if let currentCount = try? self.context.count(for: countRequest), currentCount > maxCount {
+                    let excessCount = currentCount - maxCount
+                    
+                    // 获取需要删除的（最旧的）项目的 ID
+                    let excessRequest: NSFetchRequest<ClipboardEntity> = ClipboardEntity.fetchRequest()
+                    excessRequest.sortDescriptors = [NSSortDescriptor(key: "timestamp", ascending: true)]
+                    excessRequest.fetchLimit = excessCount
+                    excessRequest.propertiesToFetch = ["id"]
+                    
+                    do {
+                        let entitiesToDelete = try self.context.fetch(excessRequest)
+                        for entity in entitiesToDelete {
+                            self.context.delete(entity)
+                        }
+                        try self.context.save()
+                    } catch {
+                        print("删除超额记录失败: \(error)")
+                    }
+                }
             }
         }
     }

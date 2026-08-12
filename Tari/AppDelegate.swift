@@ -10,54 +10,19 @@ import AppKit
 import KeyboardShortcuts
 
 extension KeyboardShortcuts.Name {
-    static let toggleBottomClip = Self("toggleBottomClip")
+    static let toggleBottomClip = Self("toggleBottomClip", default: .init(.v, modifiers: [.command, .shift]))
 }
 
 class AppDelegate: NSObject, NSApplicationDelegate {
     var panel: NSPanel?
     let clipboardManager = ClipboardManager()
-    var statusItem: NSStatusItem?
-    
-    // 用于存储延迟重置的任务
     var resetTask: DispatchWorkItem?
-    
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApplication.shared.setActivationPolicy(.accessory)
         setupPanel()
-        setupStatusBar()
-        KeyboardShortcuts.setShortcut(.init(.v, modifiers: [.command, .shift]), for: .toggleBottomClip)
         KeyboardShortcuts.onKeyDown(for: .toggleBottomClip) { [weak self] in
             self?.togglePanel()
         }
-    }
-    
-    func setupStatusBar() {
-        statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-        if let button = statusItem?.button {
-            button.image = NSImage(named: "StatusIcon")
-            button.image?.isTemplate = true
-            button.action = #selector(togglePanel)
-        }
-        createMenu()
-    }
-    
-    func createMenu() {
-        let menu = NSMenu()
-        let showMenuItem = NSMenuItem(title: "显示剪贴板", action: #selector(togglePanel), keyEquivalent: "v")
-        showMenuItem.keyEquivalentModifierMask = [.command, .shift]
-        showMenuItem.target = self
-        menu.addItem(showMenuItem)
-        
-        let clearMenuItem = NSMenuItem(title: "清空剪贴板", action: #selector(clearClipboard), keyEquivalent: "c")
-        clearMenuItem.keyEquivalentModifierMask = [.command, .shift]
-        clearMenuItem.target = self
-        menu.addItem(clearMenuItem)
-        
-        menu.addItem(NSMenuItem.separator())
-        let quitMenuItem = NSMenuItem(title: "退出", action: #selector(quitApp), keyEquivalent: "q")
-        quitMenuItem.target = self
-        menu.addItem(quitMenuItem)
-        statusItem?.menu = menu
     }
     
     @objc func quitApp() {
@@ -110,6 +75,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         let task = DispatchWorkItem { [weak self] in
             print("DEBUG: 执行延迟重置任务") // 可以在这里打断点验证
             self?.clipboardManager.pruneToFirstPage()
+            
+            // 每次关闭面板后，顺便清理过期和超量记录
+            ClipboardDataStore.shared.cleanUpOldAndExcessItems()
         }
         
         self.resetTask = task

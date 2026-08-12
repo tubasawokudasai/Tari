@@ -36,6 +36,9 @@ class ClipboardManager: ObservableObject {
         
         // 延迟启动剪贴板监听，确保数据加载完成
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+            // 启动时清理一次
+            self.dataStore.cleanUpOldAndExcessItems()
+            
             // 启动剪贴板监听
             self.timer = Timer.publish(every: 0.5, on: .main, in: .common)
                 .autoconnect()

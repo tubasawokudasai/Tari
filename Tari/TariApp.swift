@@ -14,6 +14,26 @@ struct TariApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
     
     var body: some Scene {
-        Settings { EmptyView() }
+        MenuBarExtra("Tari", image: "StatusIcon") {
+            Button("显示剪贴板") {
+                appDelegate.togglePanel()
+            }
+            
+            Divider()
+            
+            SettingsLink {
+                Text("偏好设置...")
+            }
+            .keyboardShortcut(",", modifiers: .command)
+            
+            Divider()
+            
+            Button("退出") {
+                appDelegate.quitApp()
+            }
+            .keyboardShortcut("q", modifiers: .command)
+        }
+        
+        Settings { SettingsView() }
     }
 }
