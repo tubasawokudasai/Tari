@@ -44,7 +44,7 @@ struct ContentView: View {
                     .foregroundColor(colorScheme == .dark ? .white.opacity(0.3) : Color(hex: "94a3b8"))
                 TextField("搜索剪贴板...", text: $clipboard.searchText)
                     .focused($isSearchFocused)
-                    .onChange(of: clipboard.searchText) { newText in 
+                    .onChange(of: clipboard.searchText) { _, newText in 
                         clipboard.searchItems(text: newText)
                     }
                     .textFieldStyle(.plain)
@@ -129,7 +129,7 @@ struct ContentView: View {
                 .background(
                     GeometryReader { geo in
                         Color.clear
-                            .onChange(of: geo.size.width) { newWidth in scrollViewWidth = newWidth }
+                            .onChange(of: geo.size.width) { _, newWidth in scrollViewWidth = newWidth }
                             .onAppear { scrollViewWidth = geo.size.width }
                     }
                 )
@@ -177,7 +177,7 @@ struct ContentView: View {
                 .onReceive(windowDidResignKey) { _ in
                     lastSelectedId = nil
                 }
-                .onChange(of: selectedId) { newId in
+                .onChange(of: selectedId) { _, newId in
                     if let id = newId {
                         withAnimation {
                             proxy.scrollTo(id, anchor: .center)
@@ -191,7 +191,7 @@ struct ContentView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(colorScheme == .dark ? Color(hex: "0f1118") : Color(hex: "f8fafc"))
         .clipShape(RoundedRectangle(cornerRadius: 24))
-        .onChange(of: selectedId) { newId in
+        .onChange(of: selectedId) { _, newId in
             if newId != nil {
                 isSearchFocused = false
                 NSApp.keyWindow?.makeFirstResponder(nil)
@@ -203,7 +203,7 @@ struct ContentView: View {
                 PreviewWindowManager.shared.hidePreview()
             }
         }
-        .onChange(of: isSearchFocused) { if $0 { selectedId = nil; PreviewWindowManager.shared.hidePreview() } }
+        .onChange(of: isSearchFocused) { _, isFocused in if isFocused { selectedId = nil; PreviewWindowManager.shared.hidePreview() } }
         .background(KeyEventView { event in
             handleKeyEvent(event)
         })
@@ -345,7 +345,7 @@ struct LoadMoreTrigger: View {
     var body: some View {
         GeometryReader { geo in
             Color.clear
-                .onChange(of: geo.frame(in: .named("SCROLL_SPACE")).minX) { minX in
+                .onChange(of: geo.frame(in: .named("SCROLL_SPACE")).minX) { _, minX in
                     // 核心逻辑：
                     // 如果触发器的左边缘 (minX) 小于 ScrollView 的宽度 (parentWidth)
                     // 说明触发器已经滑入屏幕（或者即将滑入），此时加载数据
@@ -438,7 +438,7 @@ struct DraggableItemCard: View {
         .background(
             GeometryReader { geo in
                 Color.clear
-                    .onChange(of: geo.frame(in: .named("SCROLL_SPACE"))) { newRect in
+                    .onChange(of: geo.frame(in: .named("SCROLL_SPACE"))) { _, newRect in
                         if previewManager.currentPreviewId == item.id {
                             if newRect.maxX < 0 || newRect.minX > scrollViewWidth {
                                 previewManager.hidePreview()

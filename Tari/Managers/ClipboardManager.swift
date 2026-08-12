@@ -351,7 +351,7 @@ class ClipboardManager: ObservableObject {
         // 3. 在后台线程执行查询
         context.perform {
             do {
-                let results = (try self.context.fetch(request)) ?? []
+                let results = try self.context.fetch(request)
                 
                 // 4. 转换为轻量级的 ClipboardListItem，增强数据验证
                 let newItems = results.compactMap { dict -> ClipboardListItem? in

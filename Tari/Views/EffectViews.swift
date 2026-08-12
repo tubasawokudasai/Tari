@@ -133,96 +133,95 @@ struct RichTextView: NSViewRepresentable {
 // MARK: - RTF Helper for rich text parsing
 // MARK: - 改进后的 RTF Helper
 struct RTFHelper {
+    @MainActor
     static func parseAsync(data: Data) async -> (NSAttributedString?, NSColor?) {
         // 检查取消
         if Task.isCancelled { return (nil, nil) }
         
-        return Task.detached(priority: .userInitiated) {
-            return autoreleasepool {
-                var docAttributes: NSDictionary? = nil
-                guard let attrString = try? NSAttributedString(
-                    data: data,
-                    options: [.documentType: NSAttributedString.DocumentType.rtf],
-                    documentAttributes: &docAttributes
-                ) else {
-                    return (nil, nil)
-                }
-                
-                // 如果发现 parse 出来的 string 长度极长，进行截断以节省渲染内存
-                let limit = 5000
-                let finalString: NSAttributedString
-                if attrString.length > limit {
-                    finalString = attrString.attributedSubstring(from: NSRange(location: 0, length: limit))
-                } else {
-                    finalString = attrString
-                }
-                
-                let mutableAttrString = NSMutableAttributedString(attributedString: finalString)
-                let length = mutableAttrString.length
-                
-                // 1. 提取主流背景色 (特别是针对 Terminal，其背景色经常附在每个字符属性上)
-                var bgColorCounts: [String: Int] = [:]
-                var colorDict: [String: NSColor] = [:]
-                mutableAttrString.enumerateAttribute(.backgroundColor, in: NSRange(location: 0, length: length), options: []) { value, range, _ in
-                    if let color = value as? NSColor, let rgb = color.usingColorSpace(.sRGB) {
-                        let hex = String(format: "#%02x%02x%02x", Int(rgb.redComponent * 255), Int(rgb.greenComponent * 255), Int(rgb.blueComponent * 255))
-                        bgColorCounts[hex, default: 0] += range.length
-                        colorDict[hex] = color
-                    }
-                }
-                
-                var extractedBgColor: NSColor? = nil
-                if let mostCommon = bgColorCounts.max(by: { $0.value < $1.value }) {
-                    if Double(mostCommon.value) / Double(length) > 0.5 {
-                        extractedBgColor = colorDict[mostCommon.key]
-                        // 移除局部背景色，由外部统一管理背景，避免出现难看的色块
-                        mutableAttrString.removeAttribute(.backgroundColor, range: NSRange(location: 0, length: length))
-                    }
-                }
-                
-                let isMostlyDarkText = finalString.isTextMostlyDark()
-                
-                // 2. 决定最终的背景色
-                var finalBgColor: NSColor? = docAttributes?[NSAttributedString.DocumentAttributeKey.backgroundColor] as? NSColor
-                
-                if finalBgColor == nil {
-                    finalBgColor = extractedBgColor
-                }
-                
-                if finalBgColor == nil {
-                    if isMostlyDarkText {
-                        finalBgColor = NSColor(white: 0.95, alpha: 1.0)
-                    } else {
-                        // 文字是浅色时，背景也必须是深色，否则看不清
-                        finalBgColor = NSColor(white: 0.12, alpha: 1.0)
-                    }
-                }
-                
-                let isBgDark = finalBgColor?.isDarkColor ?? false
-                
-                // 3. 智能调整文字颜色
-                mutableAttrString.enumerateAttributes(in: NSRange(location: 0, length: length), options: []) { attributes, range, _ in
-                    let currentColor = attributes[.foregroundColor] as? NSColor
-                    
-                    if currentColor == nil {
-                        mutableAttrString.addAttribute(.foregroundColor, value: isBgDark ? NSColor.white : NSColor.black, range: range)
-                    } else {
-                        // 对于自带颜色的情况，根据背景色调整对比度，而不是一刀切
-                        let brightness = currentColor?.usingColorSpace(.sRGB)?.brightnessComponent ?? (isBgDark ? 1.0 : 0.0)
-                        
-                        if isBgDark && brightness < 0.3 {
-                            // 背景暗，但字也太暗，提高字体亮度
-                            mutableAttrString.addAttribute(.foregroundColor, value: NSColor(white: 0.8, alpha: 1.0), range: range)
-                        } else if !isBgDark && brightness > 0.7 {
-                            // 背景亮，但字也太亮，降低字体亮度
-                            mutableAttrString.addAttribute(.foregroundColor, value: NSColor.black, range: range)
-                        }
-                    }
-                }
-                
-                return (mutableAttrString, finalBgColor)
+        return autoreleasepool {
+            var docAttributes: NSDictionary? = nil
+            guard let attrString = try? NSAttributedString(
+                data: data,
+                options: [.documentType: NSAttributedString.DocumentType.rtf],
+                documentAttributes: &docAttributes
+            ) else {
+                return (nil, nil)
             }
-        }.value
+            
+            // 如果发现 parse 出来的 string 长度极长，进行截断以节省渲染内存
+            let limit = 5000
+            let finalString: NSAttributedString
+            if attrString.length > limit {
+                finalString = attrString.attributedSubstring(from: NSRange(location: 0, length: limit))
+            } else {
+                finalString = attrString
+            }
+            
+            let mutableAttrString = NSMutableAttributedString(attributedString: finalString)
+            let length = mutableAttrString.length
+            
+            // 1. 提取主流背景色 (特别是针对 Terminal，其背景色经常附在每个字符属性上)
+            var bgColorCounts: [String: Int] = [:]
+            var colorDict: [String: NSColor] = [:]
+            mutableAttrString.enumerateAttribute(.backgroundColor, in: NSRange(location: 0, length: length), options: []) { value, range, _ in
+                if let color = value as? NSColor, let rgb = color.usingColorSpace(.sRGB) {
+                    let hex = String(format: "#%02x%02x%02x", Int(rgb.redComponent * 255), Int(rgb.greenComponent * 255), Int(rgb.blueComponent * 255))
+                    bgColorCounts[hex, default: 0] += range.length
+                    colorDict[hex] = color
+                }
+            }
+            
+            var extractedBgColor: NSColor? = nil
+            if let mostCommon = bgColorCounts.max(by: { $0.value < $1.value }) {
+                if Double(mostCommon.value) / Double(length) > 0.5 {
+                    extractedBgColor = colorDict[mostCommon.key]
+                    // 移除局部背景色，由外部统一管理背景，避免出现难看的色块
+                    mutableAttrString.removeAttribute(.backgroundColor, range: NSRange(location: 0, length: length))
+                }
+            }
+            
+            let isMostlyDarkText = finalString.isTextMostlyDark()
+            
+            // 2. 决定最终的背景色
+            var finalBgColor: NSColor? = docAttributes?[NSAttributedString.DocumentAttributeKey.backgroundColor] as? NSColor
+            
+            if finalBgColor == nil {
+                finalBgColor = extractedBgColor
+            }
+            
+            if finalBgColor == nil {
+                if isMostlyDarkText {
+                    finalBgColor = NSColor(white: 0.95, alpha: 1.0)
+                } else {
+                    // 文字是浅色时，背景也必须是深色，否则看不清
+                    finalBgColor = NSColor(white: 0.12, alpha: 1.0)
+                }
+            }
+            
+            let isBgDark = finalBgColor?.isDarkColor ?? false
+            
+            // 3. 智能调整文字颜色
+            mutableAttrString.enumerateAttributes(in: NSRange(location: 0, length: length), options: []) { attributes, range, _ in
+                let currentColor = attributes[.foregroundColor] as? NSColor
+                
+                if currentColor == nil {
+                    mutableAttrString.addAttribute(.foregroundColor, value: isBgDark ? NSColor.white : NSColor.black, range: range)
+                } else {
+                    // 对于自带颜色的情况，根据背景色调整对比度，而不是一刀切
+                    let brightness = currentColor?.usingColorSpace(.sRGB)?.brightnessComponent ?? (isBgDark ? 1.0 : 0.0)
+                    
+                    if isBgDark && brightness < 0.3 {
+                        // 背景暗，但字也太暗，提高字体亮度
+                        mutableAttrString.addAttribute(.foregroundColor, value: NSColor(white: 0.8, alpha: 1.0), range: range)
+                    } else if !isBgDark && brightness > 0.7 {
+                        // 背景亮，但字也太亮，降低字体亮度
+                        mutableAttrString.addAttribute(.foregroundColor, value: NSColor.black, range: range)
+                    }
+                }
+            }
+            
+            return (mutableAttrString, finalBgColor)
+        }
     }
 }
 

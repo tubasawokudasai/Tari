@@ -45,7 +45,7 @@ struct PreviewDialog: View {
         .task(id: itemID) {
             await loadPreviewData()
         }
-        .onChange(of: itemID) { _ in
+        .onChange(of: itemID) {
             resetImagePreviewState()
         }
     }
@@ -202,7 +202,7 @@ struct PreviewDialog: View {
             // 使用 ScrollViewReader 在双击复位时滚动到内容中心
             .overlay(
                 ScrollViewReader { proxy in
-                    Color.clear.onChange(of: zoomScale) { _ in
+                    Color.clear.onChange(of: zoomScale) {
                         print("Zoom scale changed to \(zoomScale)")
                         // 当缩放变化或重置时，尝试滚动到内容中心 (需要一定的延迟才能让ScrollView内容尺寸计算完成)
                         DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
@@ -211,7 +211,7 @@ struct PreviewDialog: View {
                             }
                         }
                     }
-                    .onChange(of: itemID) { _ in // 确保切换图片时也滚动到中心
+                    .onChange(of: itemID) { // 确保切换图片时也滚动到中心
                          DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
                             withAnimation {
                                 proxy.scrollTo(imageContentID, anchor: .center)
@@ -374,9 +374,10 @@ struct PreviewDialog: View {
         }
         
         var foundDict: [String: Data]? = nil
-        if let multiItems = try? NSKeyedUnarchiver.unarchiveObject(with: archivedData) as? [[String: Data]] {
+        let allowedClasses = [NSArray.self, NSDictionary.self, NSString.self, NSData.self]
+        if let multiItems = (try? NSKeyedUnarchiver.unarchivedObject(ofClasses: allowedClasses, from: archivedData)) as? [[String: Data]] {
             foundDict = multiItems.first
-        } else if let singleDict = try? NSKeyedUnarchiver.unarchiveObject(with: archivedData) as? [String: Data] {
+        } else if let singleDict = (try? NSKeyedUnarchiver.unarchivedObject(ofClasses: allowedClasses, from: archivedData)) as? [String: Data] {
             foundDict = singleDict
         }
         
@@ -430,11 +431,7 @@ struct PreviewDialog: View {
 }
 
 // 扩展 CGSize 以支持加法运算
-extension CGSize: Equatable {
-    public static func == (lhs: CGSize, rhs: CGSize) -> Bool {
-        return lhs.width == rhs.width && lhs.height == rhs.height
-    }
-
+extension CGSize {
     public static func + (lhs: CGSize, rhs: CGSize) -> CGSize {
         return CGSize(width: lhs.width + rhs.width, height: lhs.height + rhs.height)
     }
