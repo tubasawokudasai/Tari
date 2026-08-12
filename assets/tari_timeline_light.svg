@@ -1,0 +1,134 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 340" width="100%" height="100%" style="background-color: #f8fafc; font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', sans-serif;">
+  <defs>
+    <!-- 浅色软阴影 -->
+    <filter id="lightCardShadow" x="-10%" y="-10%" width="120%" height="120%">
+      <feDropShadow dx="0" dy="4" stdDeviation="8" flood-color="#0f172a" flood-opacity="0.06"/>
+      <feDropShadow dx="0" dy="1" stdDeviation="2" flood-color="#0f172a" flood-opacity="0.04"/>
+    </filter>
+    <filter id="lightActiveShadow" x="-15%" y="-15%" width="130%" height="130%">
+      <feDropShadow dx="0" dy="0" stdDeviation="6" flood-color="#2563eb" flood-opacity="0.25"/>
+      <feDropShadow dx="0" dy="8" stdDeviation="12" flood-color="#0f172a" flood-opacity="0.08"/>
+    </filter>
+  </defs>
+
+  <!-- 全局浅色背景 -->
+  <rect width="1000" height="340" fill="#f8fafc"/>
+
+  <!-- 顶部搜索栏 -->
+  <g transform="translate(380, 20)">
+    <rect width="240" height="32" rx="16" fill="#ffffff" stroke="#e2e8f0" stroke-width="1" filter="url(#lightCardShadow)"/>
+    <text x="16" y="21" fill="#94a3b8" font-size="12">🔍  搜索剪贴板...</text>
+  </g>
+
+  <!-- 贯穿横向时间轴导轨 -->
+  <line x1="0" y1="85" x2="1000" y2="85" stroke="#cbd5e1" stroke-width="2" stroke-dasharray="4 4"/>
+  
+  <!-- 实线当前区域 -->
+  <line x1="60" y1="85" x2="680" y2="85" stroke="#2563eb" stroke-opacity="0.5" stroke-width="2"/>
+
+  <!-- ==================== 节点 1：刚刚 (选中态) ==================== -->
+  <g transform="translate(60, 0)">
+    <!-- 轴线节点 -->
+    <circle cx="95" cy="85" r="7" fill="#2563eb" filter="url(#lightActiveShadow)"/>
+    <circle cx="95" cy="85" r="3" fill="#ffffff"/>
+    <!-- 节点刻度文本 -->
+    <text x="95" y="70" fill="#2563eb" font-size="11" font-weight="600" text-anchor="middle">刚刚</text>
+    
+    <!-- 挂接纵线 -->
+    <line x1="95" y1="92" x2="95" y2="110" stroke="#2563eb" stroke-width="2"/>
+
+    <!-- 卡片主体 (图片类) -->
+    <g transform="translate(0, 110)">
+      <rect width="190" height="190" rx="16" fill="#ffffff" stroke="#2563eb" stroke-width="2" filter="url(#lightActiveShadow)"/>
+      
+      <!-- 类型标签 -->
+      <rect x="12" y="12" width="40" height="20" rx="6" fill="#dbeafe"/>
+      <text x="32" y="26" fill="#1d4ed8" font-size="10" font-weight="600" text-anchor="middle">图片</text>
+      
+      <!-- 预览缩略图内容区 -->
+      <rect x="12" y="40" width="166" height="100" rx="8" fill="#f1f5f9"/>
+      <rect x="22" y="50" width="146" height="80" rx="4" fill="#e2e8f0"/>
+      <text x="95" y="95" fill="#64748b" font-size="11" font-weight="500" text-anchor="middle">🎨 Tari 原型.png</text>
+
+      <!-- 底部来源 App & 时间 -->
+      <line x1="12" y1="150" x2="178" y2="150" stroke="#f1f5f9"/>
+      <circle cx="24" cy="168" r="8" fill="#2563eb"/>
+      <text x="38" y="172" fill="#334155" font-size="11" font-weight="500">Tari</text>
+      <text x="178" y="172" fill="#94a3b8" font-size="10" text-anchor="end">12:30</text>
+    </g>
+  </g>
+
+  <!-- ==================== 节点 2：1分钟前 ==================== -->
+  <g transform="translate(280, 0)">
+    <!-- 轴线节点 -->
+    <circle cx="95" cy="85" r="4" fill="#94a3b8"/>
+    <text x="95" y="70" fill="#64748b" font-size="11" font-weight="500" text-anchor="middle">1 分钟前</text>
+    
+    <!-- 挂接纵线 -->
+    <line x1="95" y1="89" x2="95" y2="110" stroke="#cbd5e1" stroke-width="1"/>
+
+    <!-- 卡片主体 (文本类) -->
+    <g transform="translate(0, 110)">
+      <rect width="190" height="190" rx="16" fill="#ffffff" stroke="#e2e8f0" stroke-width="1" filter="url(#lightCardShadow)"/>
+      
+      <!-- 类型标签 -->
+      <rect x="12" y="12" width="40" height="20" rx="6" fill="#d1fae5"/>
+      <text x="32" y="26" fill="#047857" font-size="10" font-weight="600" text-anchor="middle">文本</text>
+      
+      <!-- 文本内容区 -->
+      <text x="12" y="55" fill="#0f172a" font-size="12" font-weight="600">Tari 剪贴板管理</text>
+      <text x="12" y="78" fill="#475569" font-size="11">自动识别多类型内容</text>
+      <text x="12" y="96" fill="#475569" font-size="11">智能去重与清理...</text>
+
+      <!-- 底部来源 App -->
+      <line x1="12" y1="150" x2="178" y2="150" stroke="#f1f5f9"/>
+      <circle cx="24" cy="168" r="8" fill="#2563eb"/>
+      <text x="38" y="172" fill="#334155" font-size="11" font-weight="500">Tari</text>
+      <text x="178" y="172" fill="#94a3b8" font-size="10" text-anchor="end">12:29</text>
+    </g>
+  </g>
+
+  <!-- ==================== 节点 3：7分钟前 ==================== -->
+  <g transform="translate(500, 0)">
+    <circle cx="95" cy="85" r="4" fill="#94a3b8"/>
+    <text x="95" y="70" fill="#64748b" font-size="11" font-weight="500" text-anchor="middle">7 分钟前</text>
+    <line x1="95" y1="89" x2="95" y2="110" stroke="#cbd5e1" stroke-width="1"/>
+
+    <!-- 卡片主体 (链接类) -->
+    <g transform="translate(0, 110)">
+      <rect width="190" height="190" rx="16" fill="#ffffff" stroke="#e2e8f0" stroke-width="1" filter="url(#lightCardShadow)"/>
+      
+      <rect x="12" y="12" width="40" height="20" rx="6" fill="#e0f2fe"/>
+      <text x="32" y="26" fill="#0369a1" font-size="10" font-weight="600" text-anchor="middle">链接</text>
+      
+      <text x="12" y="55" fill="#2563eb" font-size="11" font-weight="500">https://github.com/...</text>
+      <text x="12" y="75" fill="#64748b" font-size="10" font-family="monospace">tubasawokudasai/Tari</text>
+
+      <line x1="12" y1="150" x2="178" y2="150" stroke="#f1f5f9"/>
+      <circle cx="24" cy="168" r="8" fill="#ea4335"/>
+      <text x="38" y="172" fill="#334155" font-size="11" font-weight="500">Safari</text>
+      <text x="178" y="172" fill="#94a3b8" font-size="10" text-anchor="end">12:23</text>
+    </g>
+  </g>
+
+  <!-- ==================== 节点 4：41分钟前 ==================== -->
+  <g transform="translate(720, 0)">
+    <circle cx="95" cy="85" r="3" fill="#cbd5e1"/>
+    <text x="95" y="70" fill="#94a3b8" font-size="11" text-anchor="middle">41 分钟前</text>
+    <line x1="95" y1="89" x2="95" y2="110" stroke="#e2e8f0" stroke-width="1"/>
+
+    <g transform="translate(0, 110)">
+      <rect width="190" height="190" rx="16" fill="#ffffff" stroke="#f1f5f9" stroke-width="1" opacity="0.7" filter="url(#lightCardShadow)"/>
+      <rect x="12" y="12" width="40" height="20" rx="6" fill="#fef3c7"/>
+      <text x="32" y="26" fill="#b45309" font-size="10" font-weight="600" text-anchor="middle">代码</text>
+      <text x="12" y="55" fill="#334155" font-size="10" font-family="monospace">// 唤醒快捷键</text>
+      <text x="12" y="72" fill="#64748b" font-size="10" font-family="monospace">⌘ + Shift + V</text>
+      <text x="12" y="89" fill="#334155" font-size="10" font-family="monospace">tari.togglePanel()</text>
+
+      <line x1="12" y1="150" x2="178" y2="150" stroke="#f1f5f9"/>
+      <circle cx="24" cy="168" r="8" fill="#2563eb"/>
+      <text x="38" y="172" fill="#334155" font-size="11" font-weight="500">Tari</text>
+      <text x="178" y="172" fill="#94a3b8" font-size="10" text-anchor="end">11:45</text>
+    </g>
+  </g>
+</svg>
