@@ -5,6 +5,7 @@ import UniformTypeIdentifiers
 
 
 struct ContentView: View {
+    @Environment(\.colorScheme) var colorScheme
     @State private var selectedId: UUID?
     @State private var lastSelectedId: UUID?
     @FocusState private var isSearchFocused: Bool
@@ -40,7 +41,7 @@ struct ContentView: View {
             HStack {
                 Image(systemName: "magnifyingglass")
                     .font(.system(size: 11))
-                    .foregroundColor(.secondary)
+                    .foregroundColor(colorScheme == .dark ? .white.opacity(0.3) : Color(hex: "94a3b8"))
                 TextField("搜索剪贴板...", text: $clipboard.searchText)
                     .focused($isSearchFocused)
                     .onChange(of: clipboard.searchText) { newText in 
@@ -51,10 +52,15 @@ struct ContentView: View {
             }
             .padding(.horizontal, 10)
             .padding(.vertical, 5)
-            .frame(width: 260)
-            .background(Color.white.opacity(0.4))
-            .cornerRadius(6)
-            .padding(.top, 15)
+            .frame(width: 240, height: 32)
+            .background(colorScheme == .dark ? Color(hex: "1e202e") : .white)
+            .cornerRadius(16)
+            .overlay(
+                RoundedRectangle(cornerRadius: 16)
+                    .stroke(colorScheme == .dark ? Color.white.opacity(0.08) : Color(hex: "e2e8f0"), lineWidth: 1)
+            )
+            .shadow(color: colorScheme == .dark ? .clear : Color(hex: "0f172a").opacity(0.06), radius: 8, x: 0, y: 4)
+            .padding(.top, 20)
             .padding(.bottom, 5)
             .zIndex(10)
             
@@ -63,7 +69,7 @@ struct ContentView: View {
                 // ✅ 1. 定义坐标空间名称
                 ScrollView(.horizontal, showsIndicators: false) {
                     // ✅ 2. 换回 HStack 以支持拖拽排序
-                    HStack(spacing: 24) {
+                    HStack(spacing: 30) {
                         // === 修改点 1：调整锚点宽度 ===
                         // 目标边距 20 - spacing 12 = 8
                         // 这样当 scroll 到这个锚点时，屏幕左边会正好留出 8(锚点) + 12(间距) = 20 的空白
@@ -103,6 +109,20 @@ struct ContentView: View {
                     .padding(.top, 10)
                     .padding(.bottom, 30) // 增加底部间距
                     .padding(.trailing, 20)
+                    .background(
+                        GeometryReader { geo in
+                            let yOffset: CGFloat = 41 // Time text(16) + bottom padding(8) + node center(7) + top padding(10)
+                            let isDark = colorScheme == .dark
+                            let dashColor = isDark ? Color.white.opacity(0.1) : Color(hex: "cbd5e1")
+                            
+                            Path { path in
+                                path.move(to: CGPoint(x: 0, y: yOffset))
+                                path.addLine(to: CGPoint(x: geo.size.width, y: yOffset))
+                            }
+                            .stroke(style: StrokeStyle(lineWidth: 2, dash: [4, 4]))
+                            .foregroundColor(dashColor)
+                        }
+                    )
                 }
                 .coordinateSpace(name: "SCROLL_SPACE") // ✅ 命名坐标空间
                 // ✅ 获取 ScrollView 自身的宽度
@@ -169,7 +189,7 @@ struct ContentView: View {
             Spacer(minLength: 30)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 24))
+        .background(colorScheme == .dark ? Color(hex: "0f1118") : Color(hex: "f8fafc"))
         .clipShape(RoundedRectangle(cornerRadius: 24))
         .onChange(of: selectedId) { newId in
             if newId != nil {
@@ -357,15 +377,53 @@ struct DraggableItemCard: View {
     let scrollViewWidth: CGFloat
     
     @ObservedObject var previewManager = PreviewWindowManager.shared
+    @Environment(\.colorScheme) var colorScheme
     
     var body: some View {
-        ItemCard(
-            item: item,
-            isSelected: isSelected,
-            onTapSelect: onTapSelect,
-            onTapDouble: onTapDouble,
-            lastWakeUpTime: lastWakeUpTime
-        )
+        let isDark = colorScheme == .dark
+        let activeColor = isDark ? Color(hex: "6366f1") : Color(hex: "2563eb")
+        let inactiveColor = isDark ? Color.white.opacity(0.4) : Color(hex: "94a3b8")
+        
+        VStack(spacing: 0) {
+            // 时间文本
+            Text(Formatters.formatRelativeTime(item.creationTime, now: lastWakeUpTime))
+                .font(.system(size: 11, weight: isSelected ? .semibold : .medium))
+                .foregroundColor(isSelected ? activeColor : inactiveColor)
+                .frame(height: 16)
+                .padding(.bottom, 8)
+                
+            // 节点圆圈
+            ZStack {
+                if isSelected {
+                    Circle()
+                        .fill(activeColor)
+                        .frame(width: 14, height: 14)
+                        .shadow(color: activeColor.opacity(isDark ? 0.5 : 0.25), radius: 8, x: 0, y: 0)
+                    Circle()
+                        .fill(Color.white)
+                        .frame(width: 6, height: 6)
+                } else {
+                    Circle()
+                        .fill(inactiveColor)
+                        .frame(width: 8, height: 8)
+                }
+            }
+            .frame(height: 14)
+            
+            // 垂直连接线
+            Rectangle()
+                .fill(isSelected ? activeColor : inactiveColor.opacity(isDark ? 0.25 : 0.4))
+                .frame(width: isSelected ? 2 : 1, height: 22)
+            
+            // 卡片主体
+            ItemCard(
+                item: item,
+                isSelected: isSelected,
+                onTapSelect: onTapSelect,
+                onTapDouble: onTapDouble,
+                lastWakeUpTime: lastWakeUpTime
+            )
+        }
         .id("\(item.id)-\(lastWakeUpTime.timeIntervalSince1970)")
         .popover(isPresented: Binding(
             get: { previewManager.currentPreviewId == item.id },
