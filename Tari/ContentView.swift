@@ -169,9 +169,7 @@ struct ContentView: View {
             Spacer(minLength: 30)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(
-            Color.clear.glassEffect(in: RoundedRectangle(cornerRadius: 24))
-        )
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 24))
         .clipShape(RoundedRectangle(cornerRadius: 24))
         .onChange(of: selectedId) { newId in
             if newId != nil {
