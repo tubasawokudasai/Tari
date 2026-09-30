@@ -2,12 +2,40 @@ import SwiftUI
 import KeyboardShortcuts
 
 struct SettingsView: View {
+    @StateObject private var launchManager = LaunchAtLoginManager.shared
     @AppStorage("retentionPeriod") private var retentionPeriod: Int = 30
     @AppStorage("maxRecordCount") private var maxRecordCount: Int = 1000
     @State private var showClearAlert = false
     
     var body: some View {
         Form {
+            Section(header: Text("常规设置")) {
+                Toggle("开机启动 Tari", isOn: Binding(
+                    get: { launchManager.isEnabled },
+                    set: { launchManager.setLaunchAtLogin(enabled: $0) }
+                ))
+                
+                if let desc = launchManager.statusDescription {
+                    HStack {
+                        Text(desc)
+                            .font(.caption)
+                            .foregroundColor(.orange)
+                        Spacer()
+                        Button("打开系统设置") {
+                            launchManager.openSystemLoginItemsSettings()
+                        }
+                        .font(.caption)
+                        .buttonStyle(.link)
+                    }
+                }
+                
+                if let errorMsg = launchManager.errorMessage {
+                    Text(errorMsg)
+                        .font(.caption)
+                        .foregroundColor(.red)
+                }
+            }
+            
             Section(header: Text("快捷键设置")) {
                 KeyboardShortcuts.Recorder("唤醒剪贴板面板", name: .toggleBottomClip)
             }
@@ -46,7 +74,10 @@ struct SettingsView: View {
             }
         }
         .formStyle(.grouped)
-        .frame(width: 450, height: 380)
+        .frame(width: 450, height: 440)
+        .onAppear {
+            launchManager.refreshStatus()
+        }
         .alert("确定要清空所有剪贴板历史记录吗？", isPresented: $showClearAlert) {
             Button("取消", role: .cancel) { }
             Button("清空所有记录", role: .destructive) {
@@ -57,3 +88,4 @@ struct SettingsView: View {
         }
     }
 }
+
