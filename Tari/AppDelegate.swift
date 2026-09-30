@@ -23,6 +23,21 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         KeyboardShortcuts.onKeyDown(for: .toggleBottomClip) { [weak self] in
             self?.togglePanel()
         }
+        
+        // 监听非主面板窗口（如偏好设置窗口）激活，将其层级提升至 .statusBar 并关闭主面板
+        NotificationCenter.default.addObserver(forName: NSWindow.didBecomeKeyNotification, object: nil, queue: .main) { [weak self] notification in
+            guard let window = notification.object as? NSWindow else { return }
+            if window !== self?.panel {
+                window.level = .statusBar
+                self?.closePanel()
+            }
+        }
+    }
+    
+    @objc func openSettings() {
+        closePanel()
+        NSApp.activate(ignoringOtherApps: true)
+        NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
     }
     
     @objc func quitApp() {

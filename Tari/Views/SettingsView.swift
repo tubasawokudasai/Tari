@@ -7,6 +7,9 @@ struct SettingsView: View {
     @AppStorage("maxRecordCount") private var maxRecordCount: Int = 1000
     @State private var showClearAlert = false
     
+    @State private var hasCentered = false
+    @State private var currentWindow: NSWindow?
+    
     var body: some View {
         Form {
             Section(header: Text("常规设置")) {
@@ -75,8 +78,18 @@ struct SettingsView: View {
         }
         .formStyle(.grouped)
         .frame(width: 450, height: 440)
+        .background(
+            WindowAccessor { window in
+                self.currentWindow = window
+                configureWindow(window)
+            }
+        )
         .onAppear {
             launchManager.refreshStatus()
+            (NSApp.delegate as? AppDelegate)?.closePanel()
+            if let window = currentWindow {
+                configureWindow(window)
+            }
         }
         .alert("确定要清空所有剪贴板历史记录吗？", isPresented: $showClearAlert) {
             Button("取消", role: .cancel) { }
@@ -85,6 +98,73 @@ struct SettingsView: View {
             }
         } message: {
             Text("此操作将彻底删除所有本地存储剪贴板历史数据，该过程不可撤销。")
+        }
+    }
+    
+    private func configureWindow(_ window: NSWindow) {
+        window.level = .statusBar
+        if !hasCentered {
+            window.center()
+            hasCentered = true
+        }
+        window.makeKeyAndOrderFront(nil)
+        window.orderFrontRegardless()
+        NSApp.activate(ignoringOtherApps: true)
+    }
+}
+
+// MARK: - Window Accessor
+private struct WindowAccessor: NSViewRepresentable {
+    let configure: (NSWindow) -> Void
+    
+    func makeNSView(context: Context) -> NSView {
+        let view = WindowAccessorView()
+        view.configure = configure
+        return view
+    }
+    
+    func updateNSView(_ nsView: NSView, context: Context) {
+        if let accessorView = nsView as? WindowAccessorView {
+            accessorView.configure = configure
+            if let window = accessorView.window {
+                window.level = .statusBar
+            }
+        }
+    }
+}
+
+private class WindowAccessorView: NSView {
+    var configure: ((NSWindow) -> Void)?
+    private var observer: NSObjectProtocol?
+    
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        
+        if let observer = observer {
+            NotificationCenter.default.removeObserver(observer)
+            self.observer = nil
+        }
+        
+        if let window = window {
+            DispatchQueue.main.async { [weak self, weak window] in
+                guard let self = self, let window = window else { return }
+                self.configure?(window)
+            }
+            
+            observer = NotificationCenter.default.addObserver(
+                forName: NSWindow.didBecomeKeyNotification,
+                object: window,
+                queue: .main
+            ) { [weak self, weak window] _ in
+                guard let self = self, let window = window else { return }
+                self.configure?(window)
+            }
+        }
+    }
+    
+    deinit {
+        if let observer = observer {
+            NotificationCenter.default.removeObserver(observer)
         }
     }
 }
